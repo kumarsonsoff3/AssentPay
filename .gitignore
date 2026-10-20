@@ -32,12 +32,19 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
 .agent
 AGENTS.md
+docs
+tests
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local-only tooling
+playwright.config.ts
+postman

@@ -40,11 +40,16 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="hidden items-center gap-5 lg:flex">
-          <span className="hidden text-[11px] font-medium text-muted-foreground xl:block">
-            Built for your business
-          </span>
+          <a
+            href="/sign-in"
+            className="flex min-h-11 items-center text-xs font-medium text-navy/75 hover:text-primary"
+          >
+            Sign in
+          </a>
           <Button asChild className="h-11 rounded-lg px-5 text-xs shadow-none">
-            <a href="#workflow">Explore demo <ArrowUpRight className="ml-1 size-3.5" /></a>
+            <a href="/sign-up">
+              Get started <ArrowUpRight className="ml-1 size-3.5" />
+            </a>
           </Button>
         </div>
         <Sheet>
@@ -82,8 +87,18 @@ export function SiteHeader() {
                 </SheetClose>
               ))}
               <SheetClose asChild>
+                <a
+                  href="/sign-in"
+                  className="rounded-lg px-3 py-4 text-base font-medium text-navy hover:bg-secondary"
+                >
+                  Sign in
+                </a>
+              </SheetClose>
+              <SheetClose asChild>
                 <Button asChild className="mt-5 h-12">
-                  <a href="#workflow">Explore demo <ArrowUpRight className="size-4" /></a>
+                  <a href="/sign-up">
+                    Get started <ArrowUpRight className="size-4" />
+                  </a>
                 </Button>
               </SheetClose>
             </nav>
