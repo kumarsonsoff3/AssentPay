@@ -1,0 +1,532 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+:root {
+  --background: #ffffff;
+  --foreground: #102344;
+  --card: #ffffff;
+  --card-foreground: #102344;
+  --popover: #ffffff;
+  --popover-foreground: #102344;
+  --primary: #2453ff;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f3fa;
+  --secondary-foreground: #263b5e;
+  --muted: #f5f7fc;
+  --muted-foreground: #68758c;
+  --accent: #eef2ff;
+  --accent-foreground: #2453ff;
+  --destructive: #c6354e;
+  --border: #e8ecf4;
+  --input: #d8dfed;
+  --ring: #2453ff;
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-navy: #102344;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), Arial, sans-serif;
+  }
+  button,
+  a,
+  input {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled),
+  a {
+    touch-action: manipulation;
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 3px solid #2453ff;
+    outline-offset: 5px;
+  }
+  ::selection {
+    background: #dbe5ff;
+    color: #102344;
+  }
+}
+
+.page-shell {
+  width: min(100% - 96px, 1440px);
+  margin-inline: auto;
+}
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 100;
+  transform: translateY(-160%);
+  border-radius: 6px;
+  padding: 12px 20px;
+  background: #102344;
+  color: white;
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+.hero-section {
+  background: linear-gradient(110deg, #fff 17%, #f9faff 67%, #f1f5ff 100%);
+}
+.hero-glow {
+  position: absolute;
+  z-index: -1;
+  top: 6%;
+  right: -12%;
+  width: 65%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse,
+    #dbe5ff 0%,
+    #eaf0ff88 44%,
+    transparent 70%
+  );
+}
+.hero-layout {
+  display: grid;
+  grid-template-columns: 0.95fr 1.15fr;
+  gap: 24px;
+  align-items: center;
+  padding-block: 56px 48px;
+}
+.hero-copy {
+  padding-bottom: 16px;
+}
+.hero-heading {
+  font-size: clamp(46px, 3.75vw, 58px);
+  font-weight: 650;
+  line-height: 1.09;
+  letter-spacing: -2.8px;
+}
+.hero-description {
+  max-width: 450px;
+  margin-top: 25px;
+  font-size: 15px;
+  line-height: 1.85;
+  color: #5b6a83;
+}
+.hero-primary {
+  box-shadow:
+    0 5px 12px #2453ff20,
+    inset 0 1px 0 #ffffff30;
+}
+.brand-gradient {
+  display: inline-block;
+  white-space: nowrap;
+  background: linear-gradient(
+    110deg,
+    #07306a 0%,
+    #0751d9 38%,
+    #0087ee 73%,
+    #0095df 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: #0861dc;
+}
+.workflow-demo {
+  min-width: 0;
+}
+.workflow-canvas {
+  position: relative;
+  height: 480px;
+}
+.workflow-backdrop {
+  position: absolute;
+  inset: 0 -8%;
+  width: 116%;
+  height: 100%;
+}
+.workflow-connectors {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.flow-path {
+  stroke: #8aa8fa;
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+  transition: stroke 0.4s;
+}
+.flow-path-solid {
+  stroke-dasharray: none;
+}
+.flow-path.is-traveled {
+  stroke: #3769ed;
+  animation: flow-dash 16s linear infinite;
+}
+.workflow-card {
+  position: absolute;
+  z-index: 1;
+  border: 1px solid #ffffff;
+  border-radius: 15px;
+  padding: 16px;
+  background: #ffffffed;
+  box-shadow:
+    0 12px 35px -10px #2758bd20,
+    0 1px 4px #17366a05;
+  transition:
+    border-color 0.35s,
+    box-shadow 0.35s,
+    background 0.35s;
+  backdrop-filter: blur(12px);
+}
+.workflow-card.card-active {
+  border-color: #a5beff;
+  box-shadow:
+    0 0 0 3px #2453ff04,
+    0 14px 36px -10px #2453ff24;
+}
+.email-card {
+  top: 40px;
+  left: 0;
+  width: 27%;
+}
+.agent-card {
+  top: 65px;
+  left: 34%;
+  width: 23%;
+  padding: 16px 12px;
+  background: linear-gradient(160deg, #ffffff, #f3f6ff);
+}
+.agent-orb {
+  background: linear-gradient(145deg, #0a3380, #1678ff);
+  box-shadow: 0 4px 12px #2453ff20;
+}
+.approval-card {
+  top: 20px;
+  right: 0;
+  width: 37%;
+}
+.paypal-card {
+  top: 310px;
+  left: 35%;
+  width: 34.5%;
+}
+.payment-card {
+  top: 360px;
+  right: 0;
+  width: 26.5%;
+  padding: 17px 13px;
+}
+.payment-check {
+  background: linear-gradient(135deg, #16b99a, #00946c);
+  box-shadow: 0 3px 8px #00946c20;
+}
+.workflow-card.payment-complete {
+  border-color: #b8eadc;
+  background: #fbfffd;
+}
+.card-rejected {
+  border-color: #fecdd3;
+}
+.workflow-caption {
+  display: flex;
+  min-height: 44px;
+  margin-top: 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-inline: 5px;
+}
+.approval-card [data-slot="button"] {
+  min-height: 44px;
+}
+[data-slot="sheet-content"] > button:last-child,
+[data-slot="dialog-content"] > button:last-child {
+  display: flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-flow-arrow {
+  display: none;
+}
+.integration-strip {
+  display: flex;
+  align-items: center;
+  gap: 64px;
+  padding-block: 25px;
+}
+.integration-items {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+}
+.integration-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  color: #53617b;
+  font-size: 12px;
+}
+.coming-soon {
+  margin-left: -3px;
+  border-radius: 4px;
+  background: #f0f3fa;
+  padding: 3px 5px;
+  font-size: 8px;
+  color: #68758c;
+}
+.workflow-demo[data-paused="true"] .flow-path {
+  animation-play-state: paused;
+}
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -200;
+  }
+}
+
+@media (min-width: 1600px) {
+  .hero-layout {
+    padding-block: 70px 60px;
+  }
+}
+@media (max-width: 1279px) {
+  .page-shell {
+    width: calc(100% - 64px);
+  }
+  .hero-layout {
+    grid-template-columns: 1fr;
+    gap: 35px;
+    padding-block: 45px 35px;
+  }
+  .hero-copy {
+    max-width: 720px;
+    margin-inline: auto;
+    text-align: center;
+  }
+  .hero-heading {
+    font-size: 60px;
+  }
+  .hero-description {
+    max-width: 510px;
+    margin-inline: auto;
+  }
+  .hero-copy > div {
+    justify-content: center;
+  }
+  .workflow-demo {
+    width: min(100%, 760px);
+    margin-inline: auto;
+  }
+  .integration-strip {
+    gap: 30px;
+  }
+  .integration-items {
+    gap: 16px;
+  }
+  .integration-brand {
+    gap: 6px;
+  }
+}
+@media (max-width: 1023px) {
+  .integration-strip {
+    flex-direction: column;
+    gap: 23px;
+    padding-block: 27px;
+    text-align: center;
+  }
+  .integration-items {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 24px 36px;
+  }
+}
+@media (min-width: 640px) and (max-width: 767px) {
+  .workflow-card {
+    padding: 13px 10px;
+  }
+  .agent-card {
+    padding-inline: 8px;
+  }
+  .agent-card > div:last-child > div {
+    font-size: 9px;
+  }
+  .approval-summary {
+    padding: 9px;
+  }
+  .payment-card {
+    padding-inline: 9px;
+  }
+  .payment-card > div {
+    gap: 6px;
+  }
+  .payment-card h2 {
+    font-size: 10px;
+  }
+  .payment-card .font-mono {
+    font-size: 15px;
+  }
+}
+@media (max-width: 639px) {
+  .page-shell {
+    width: calc(100% - 40px);
+  }
+  .hero-layout {
+    gap: 24px;
+    padding-block: 30px 28px;
+  }
+  .hero-copy {
+    text-align: left;
+  }
+  .hero-heading {
+    font-size: clamp(34px, 10.5vw, 60px);
+    letter-spacing: -2px;
+    line-height: 1.12;
+  }
+  .hero-description {
+    margin-top: 20px;
+    font-size: 14px;
+    line-height: 1.85;
+  }
+  .hero-copy > div {
+    justify-content: flex-start;
+  }
+  .hero-copy > div > a {
+    padding-inline: 17px;
+    font-size: 12px;
+  }
+  .hero-glow {
+    top: 33%;
+    right: -50%;
+    width: 130%;
+    height: 60%;
+  }
+  .workflow-demo {
+    padding: 16px 12px 10px;
+    border: 1px solid #dce5f5;
+    border-radius: 16px;
+    background: #f5f8ff80;
+  }
+  .workflow-canvas {
+    display: flex;
+    height: auto;
+    flex-direction: column;
+    align-items: center;
+  }
+  .workflow-connectors,
+  .workflow-backdrop {
+    display: none;
+  }
+  .workflow-card {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    max-width: 400px;
+    padding: 19px;
+  }
+  .mobile-flow-arrow {
+    display: flex;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    color: #7291d1;
+  }
+  .workflow-caption {
+    min-height: 70px;
+    margin-top: 16px;
+    padding-inline: 3px;
+  }
+  .approval-card [data-slot="button"] {
+    font-size: 11px;
+  }
+  .email-card p {
+    font-size: 13px;
+  }
+  .agent-card > div:last-child > div {
+    font-size: 12px;
+  }
+  .integration-brand {
+    font-size: 11px;
+  }
+  .integration-items {
+    gap: 22px 25px;
+  }
+  .dashboard-frame {
+    border-width: 3px;
+    border-radius: 12px;
+  }
+}
+@media (max-width: 374px) {
+  .hero-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .hero-actions > a {
+    width: 100%;
+  }
+  .hero-copy > [data-slot="badge"] {
+    gap: 5px;
+    font-size: 9px;
+  }
+  .workflow-caption {
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .workflow-caption > div:last-child {
+    margin-left: auto;
+  }
+  .integration-items {
+    gap: 20px 18px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

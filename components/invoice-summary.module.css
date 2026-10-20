@@ -1,0 +1,166 @@
+.card {
+  min-width: 0;
+  border: 1px solid #d5e4ff;
+  border-radius: 14px;
+  padding: 22px;
+  background: linear-gradient(145deg, #fff 70%, #f5faff);
+  color: #152b4e;
+  box-shadow:
+    0 10px 30px -18px #397afa38,
+    inset 0 1px 0 #fff;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.header > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.header img {
+  width: 64px;
+  height: auto;
+  object-fit: contain;
+}
+.header div > span {
+  color: #64758f;
+  font-size: 11px;
+}
+.status {
+  flex-shrink: 0;
+  border: 1px solid #d4e3ff;
+  border-radius: 20px;
+  padding: 5px 9px;
+  background: #eaf2ff;
+  color: #2459cd;
+  font-size: 10px;
+}
+.status[data-paid="true"] {
+  border-color: #c4efdf;
+  background: #e6faf1;
+  color: #167c55;
+}
+.parties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 24px;
+}
+.parties > div {
+  min-width: 0;
+}
+.parties small {
+  display: block;
+  color: #7c8ba2;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+}
+.parties strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dates {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px 12px;
+  margin-top: 17px;
+  padding-bottom: 14px;
+  color: #70809a;
+  font-size: 10px;
+}
+.items {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.items th {
+  border-block: 1px solid #e8edf6;
+  padding-block: 8px;
+  color: #7c8ca5;
+  font-size: 10px;
+  font-weight: 400;
+  text-align: left;
+}
+.items td {
+  padding-block: 10px;
+  border-bottom: 1px solid #edf1f7;
+  vertical-align: top;
+}
+.items th:last-child,
+.items td:last-child {
+  padding-left: 14px;
+  text-align: right;
+  white-space: nowrap;
+}
+.items strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.items td span {
+  display: block;
+  margin-top: 3px;
+  color: #7c8ba3;
+  font-size: 10px;
+}
+.totals {
+  margin-top: 11px;
+}
+.totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 5px;
+  color: #697b98;
+  font-size: 11px;
+}
+.totals dt > span {
+  font-size: 9px;
+}
+.totals dd {
+  font-variant-numeric: tabular-nums;
+}
+.totals .balance {
+  align-items: center;
+  margin-top: 7px;
+  border-top: 1px solid #e4ebf6;
+  padding-top: 12px;
+  color: #192f52;
+  font-weight: 600;
+}
+.balance dd {
+  font-size: 23px;
+  letter-spacing: -0.8px;
+  line-height: 1.2;
+}
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-top: 16px;
+  color: #8797af;
+  font-size: 9px;
+}
+@media (max-width: 639px) {
+  .card {
+    padding: 18px;
+  }
+  .header > div {
+    gap: 8px;
+  }
+  .header div > span {
+    font-size: 10px;
+  }
+  .parties {
+    margin-top: 21px;
+  }
+}
