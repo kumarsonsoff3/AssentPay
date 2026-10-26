@@ -1,17 +1,5 @@
 "use client";
-
-import { Button } from "@/components/ui/button";
-
-export default function AccountError({ reset }: { reset: () => void }) {
-  return (
-    <main className="mx-auto max-w-lg px-6 py-24">
-      <h1 className="text-2xl font-semibold">
-        Your account is temporarily unavailable.
-      </h1>
-      <p className="my-5 text-muted-foreground">
-        We couldn’t reach the authentication service. Please try again.
-      </p>
-      <Button onClick={reset}>Try again</Button>
-    </main>
-  );
+import { RecoveryState } from "@/components/feedback/recovery";
+export default function ErrorPage({ retry }: { retry: () => void }) {
+  return <RecoveryState title="Your account couldn’t load" description="We couldn’t retrieve your account details. Try again to reconnect." retry={retry} href="/workspaces" action="Go to workspaces"/>;
 }

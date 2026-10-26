@@ -11,7 +11,7 @@ import {
   RotateCcw,
   ShieldCheck,
   UserRound,
-} from "lucide-react";
+} from "@/components/icons";
 import { Brand, GmailMark, SlackMark } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,7 +93,7 @@ export function ApprovalBriefing() {
         </span>
       </div>
       <div className="briefing-agent-heading">
-        <Brand compact small />
+        <Brand compact />
         <div>
           <strong>
             AssentPay <span>APP</span>

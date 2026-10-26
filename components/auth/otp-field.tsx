@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export function OtpField({
   error,
@@ -11,6 +12,7 @@ export function OtpField({
 }) {
   const [code, setCode] = useState("");
   const [selection, setSelection] = useState(0);
+  const hydrated = useHydrated();
 
   return (
     <div className="min-w-0">
@@ -21,7 +23,9 @@ export function OtpField({
         <input
           id="code"
           name="code"
-          className="absolute inset-0 z-10 h-14 w-full cursor-text rounded-lg border-0 bg-transparent text-base text-transparent caret-transparent opacity-0"
+          className={hydrated
+            ? "absolute inset-0 z-10 h-14 w-full cursor-text rounded-lg border-0 bg-transparent text-base text-transparent caret-transparent opacity-0"
+            : "h-14 w-full rounded-lg border border-input bg-background px-3 font-mono text-2xl tracking-widest"}
           type="text"
           inputMode="numeric"
           autoComplete="one-time-code"
@@ -29,11 +33,11 @@ export function OtpField({
           maxLength={6}
           required
           spellCheck={false}
-          value={code}
           aria-invalid={!!error}
           aria-describedby={error ? "code-error code-hint" : "code-hint"}
           onChange={(event) => {
             const value = event.target.value.replace(/\D/g, "").slice(0, 6);
+            event.currentTarget.value = value;
             setCode(value);
             onEdit();
             setSelection(
@@ -50,12 +54,13 @@ export function OtpField({
               .slice(0, 6);
             if (!value) return;
             event.preventDefault();
+            event.currentTarget.value = value;
             setCode(value);
             onEdit();
             setSelection(Math.min(value.length, 5));
           }}
         />
-        <div
+        {hydrated && <div
           className="pointer-events-none grid grid-cols-6 gap-2"
           aria-hidden="true"
         >
@@ -80,7 +85,7 @@ export function OtpField({
               )}
             </span>
           ))}
-        </div>
+        </div>}
       </div>
       <p
         id="code-hint"

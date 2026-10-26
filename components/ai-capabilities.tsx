@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   Sparkles,
   TriangleAlert,
-} from "lucide-react";
+} from "@/components/icons";
 import { GmailMark } from "@/components/brand";
 
 const capabilities = [

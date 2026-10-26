@@ -1,0 +1,26 @@
+{
+  "projectId": "6ad61f2c001611cc74db",
+  "endpoint": "https://fra.cloud.appwrite.io/v1",
+  "functions": [
+    {
+      "$id": "assentpay-integrations",
+      "name": "AssentPay private integration runtime",
+      "runtime": "node-22",
+      "execute": [],
+      "events": [],
+      "schedule": "",
+      "timeout": 120,
+      "enabled": true,
+      "logging": false,
+      "entrypoint": "index.js",
+      "commands": "npm install --omit=dev --ignore-scripts",
+      "scopes": [
+        "rows.read",
+        "rows.write",
+        "teams.read",
+        "users.read"
+      ],
+      "path": ".function-build/integration-runtime"
+    }
+  ]
+}

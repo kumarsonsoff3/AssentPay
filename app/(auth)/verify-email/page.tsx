@@ -1,3 +1,4 @@
+import { LoadingState } from "@/components/feedback/feedback";
 import { AuthPanel } from "@/components/auth/auth-shell";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -40,7 +41,7 @@ export default function VerifyEmailPage({
 }) {
   return (
     <AuthPanel compact>
-      <Suspense fallback={<p role="status">Loading your account…</p>}>
+      <Suspense fallback={<LoadingState title="Loading your account…" />}>
         <Verification searchParams={searchParams} />
       </Suspense>
     </AuthPanel>

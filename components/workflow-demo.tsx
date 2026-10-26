@@ -14,7 +14,7 @@ import {
   Play,
   RotateCcw,
   ShieldCheck,
-} from "lucide-react";
+} from "@/components/icons";
 import { GmailMark, PayPalMark, SlackMark } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import {
@@ -215,7 +215,7 @@ export function WorkflowDemo() {
           )}
         >
           <div className="agent-orb mx-auto flex size-11 items-center justify-center rounded-2xl text-white">
-            <Bot className="size-7" strokeWidth={1.7} />
+            <Bot className="size-7" />
           </div>
           <h2 className="mt-3 text-center text-[12px] font-semibold">
             AI agent analyzes

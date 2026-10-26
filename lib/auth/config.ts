@@ -1,6 +1,7 @@
 import "server-only";
 
-export class AuthConfigurationError extends Error {}
+import { AuthConfigurationError } from "@/lib/errors";
+export { AuthConfigurationError } from "@/lib/errors";
 
 export function authConfig() {
   const endpoint = process.env.APPWRITE_ENDPOINT;

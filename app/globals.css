@@ -21,6 +21,13 @@
   --input: #d8dfed;
   --ring: #2453ff;
   --radius: 0.625rem;
+  --icon-muted: #64748b;
+  --icon-brand: #2453ff;
+  --icon-info: #1672bc;
+  --icon-success: #16815d;
+  --icon-warning: #a66812;
+  --icon-danger: #c6354e;
+  --icon-intelligence: #7c4dcc;
 }
 
 @theme inline {
@@ -88,6 +95,11 @@
 .page-shell {
   width: min(100% - 96px, 1440px);
   margin-inline: auto;
+}
+.app-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: -0.125em;
 }
 .skip-link {
   position: fixed;

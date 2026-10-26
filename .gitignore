@@ -36,15 +36,30 @@ yarn-error.log*
 
 # vercel
 .vercel
-.agent
-AGENTS.md
-docs
-tests
+Agents.md
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 
 # Local-only tooling
+.agents/
+.agent/
 playwright.config.ts
-postman
+postman/
+/scripts/
+/tests/
+
+# Local-only container setup
+/.dockerignore
+/Dockerfile.worker
+/compose.worker.yml
+
+# Trigger.dev local worker and artifacts
+.trigger
+
+# Encrypted local migration recovery snapshots (not application assets)
+.local-backups/
+
+# Generated private Function bundles
+/.function-build/

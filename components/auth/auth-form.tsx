@@ -1,7 +1,10 @@
 "use client";
+import { requestErrorMessage } from "@/lib/request-feedback";
+import { Spinner } from "@/components/feedback/feedback";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { DropdownMenu } from "radix-ui";
+import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -11,13 +14,12 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
-  Loader2,
   LockKeyhole,
   Mail,
   ShieldCheck,
-} from "lucide-react";
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { PayPalMark } from "@/components/brand";
+import { GoogleMark, PayPalMark } from "@/components/brand";
 import {
   normalizeEmail,
   passwordRules,
@@ -45,19 +47,21 @@ export type AuthMode =
 
 const copy: Record<
   AuthMode,
-  { eyebrow: string; title: string; description: string; button: string }
+  { eyebrow: string; title: string; description: string; button: string; pending: string }
 > = {
   "sign-in": {
     eyebrow: "WELCOME BACK",
     title: "Good to see you again.",
     description: "Sign in to keep your business moving forward.",
     button: "Sign in",
+    pending: "Signing in…",
   },
   "sign-up": {
     eyebrow: "LET’S GET STARTED",
     title: "Create your AssentPay account.",
     description: "Create your account. A little less admin starts here.",
     button: "Create account",
+    pending: "Creating account…",
   },
   "forgot-password": {
     eyebrow: "A FRESH START",
@@ -65,12 +69,14 @@ const copy: Record<
     description:
       "It happens. Enter your email and we’ll send you a link to reset it.",
     button: "Send reset link",
+    pending: "Sending reset link…",
   },
   "reset-password": {
     eyebrow: "A FRESH START",
     title: "Set a new password.",
     description: "Choose a strong password you haven’t used before.",
     button: "Save new password",
+    pending: "Saving password…",
   },
   "verify-email": {
     eyebrow: "ONE MORE STEP",
@@ -78,6 +84,7 @@ const copy: Record<
     description:
       "We sent a six-digit code to your email. Verify your address to finish creating your account.",
     button: "Verify email",
+    pending: "Verifying email…",
   },
   "email-verification": {
     eyebrow: "ONE MORE STEP",
@@ -85,6 +92,7 @@ const copy: Record<
     description:
       "Confirm your email address to finish setting up your account.",
     button: "Confirm email address",
+    pending: "Verifying email…",
   },
 };
 
@@ -104,6 +112,8 @@ async function send(action: string, payload: object = {}) {
     body: JSON.stringify(payload),
   });
   const result = await response.json();
+  if (!response.ok && result.code === "APP_ORIGIN_MISMATCH" && result.redirect)
+    window.location.assign(result.redirect);
   if (!response.ok)
     throw new AuthRequestError(
       result.error || "Something went wrong. Please try again.",
@@ -115,7 +125,6 @@ async function send(action: string, payload: object = {}) {
 function PasswordField({
   name,
   label,
-  value,
   onChange,
   reveal,
   onReveal,
@@ -124,7 +133,6 @@ function PasswordField({
 }: {
   name: string;
   label: string;
-  value?: string;
   onChange?: (value: string) => void;
   reveal: boolean;
   onReveal: () => void;
@@ -146,7 +154,6 @@ function PasswordField({
           required
           maxLength={256}
           minLength={isNew ? 12 : undefined}
-          value={value}
           onChange={
             onChange ? (event) => onChange(event.target.value) : undefined
           }
@@ -204,7 +211,9 @@ export function AuthForm({
   const [reveal, setReveal] = useState(false);
   const [error, setError] = useState(initialError);
   const [message, setMessage] = useState(initialMessage);
-  const [busy, setBusy] = useState(false);
+  const [requestPending, setBusy] = useState(false);
+  const [navigationPending, startNavigation] = useTransition();
+  const busy = requestPending || navigationPending;
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
@@ -214,6 +223,12 @@ export function AuthForm({
   const { seconds: cooldown, start: startCooldown } = useResendCooldown();
   const isNew = mode === "sign-up" || mode === "reset-password";
   const authEntry = mode === "sign-in" || mode === "sign-up";
+  const submitAction =
+    mode === "verify-email"
+      ? "verify-otp"
+      : mode === "email-verification"
+        ? "verify-link"
+        : mode;
   const content = copy[mode];
 
   useEffect(() => {
@@ -261,10 +276,16 @@ export function AuthForm({
     try {
       const result = await send(action, payload);
       if (result.redirect) {
+        // Clear sensitive fields before the router can retain this form in its
+        // navigation cache, including after a later sign-out.
+        formRef.current?.reset();
+        setPassword("");
         if (action === "oauth") window.location.assign(result.redirect);
         else {
-          router.replace(result.redirect);
-          router.refresh();
+          startNavigation(() => {
+            router.replace(result.redirect!);
+            router.refresh();
+          });
         }
       } else {
         if (
@@ -289,9 +310,7 @@ export function AuthForm({
       }
     } catch (cause) {
       const issue =
-        cause instanceof Error
-          ? cause.message
-          : "Couldn’t connect. Please try again.";
+        requestErrorMessage(cause);
       // Account/network failures remain form-level; a rejected code belongs
       // beside the code field, including expired or already-used codes.
       if (
@@ -310,6 +329,9 @@ export function AuthForm({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
+    // Password managers and early typing can populate the DOM before React
+    // receives a change event. Validate the values that will actually be sent.
+    const submittedPassword = String(fields.get("password") || "");
     const payload = Object.fromEntries(fields.entries());
     const issues: Record<string, string> = {};
     if (mode === "sign-up" && !String(fields.get("name") || "").trim())
@@ -319,14 +341,14 @@ export function AuthForm({
       !validEmail(normalizeEmail(String(fields.get("email") || "")))
     )
       issues.email = "Enter a valid email address.";
-    if (mode === "sign-in" && !password)
+    if (mode === "sign-in" && !submittedPassword)
       issues.password = "Enter your password.";
     if (isNew) {
-      const issue = validatePassword(password);
+      const issue = validatePassword(submittedPassword);
       if (issue) issues.password = issue;
       if (!fields.get("confirmPassword"))
         issues.confirmPassword = "Confirm your password.";
-      else if (password !== fields.get("confirmPassword"))
+      else if (submittedPassword !== fields.get("confirmPassword"))
         issues.confirmPassword = "The passwords do not match.";
     }
     if (
@@ -345,14 +367,11 @@ export function AuthForm({
         ?.focus();
       return;
     }
-    void perform(
-      mode === "verify-email"
-        ? "verify-otp"
-        : mode === "email-verification"
-          ? "verify-link"
-          : mode,
-      { ...payload, ...tokens, terms: fields.get("terms") === "on" },
-    );
+    void perform(submitAction, {
+      ...payload,
+      ...tokens,
+      terms: fields.get("terms") === "on",
+    });
   }
 
   const invalidLink =
@@ -414,29 +433,7 @@ export function AuthForm({
                 disabled={busy}
                 onClick={() => void perform("oauth", { provider: "google" })}
               >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  width="18"
-                  height="18"
-                >
-                  <path
-                    fill="#4285F4"
-                    d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.51h3.24c1.9-1.75 2.98-4.33 2.98-7.36Z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.24-2.51c-.9.6-2.05.96-3.38.96-2.6 0-4.8-1.76-5.59-4.12H3.06v2.59A10 10 0 0 0 12 22Z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M6.41 13.92a6 6 0 0 1 0-3.84V7.49H3.06a10 10 0 0 0 0 9.02l3.35-2.59Z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.96c1.47 0 2.79.51 3.83 1.52l2.88-2.88A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.49l3.35 2.59C7.2 7.72 9.4 5.96 12 5.96Z"
-                  />
-                </svg>
+                <GoogleMark className="size-4.5" />
                 Continue with Google
               </Button>
             )}
@@ -529,6 +526,9 @@ export function AuthForm({
         </div>
       ) : (
         <form
+          method="post"
+          action={`/api/forms/auth/${submitAction}`}
+          data-auth-pending={content.pending}
           ref={formRef}
           onSubmit={submit}
           noValidate
@@ -539,6 +539,12 @@ export function AuthForm({
               clearField(event.target.name);
           }}
         >
+          {tokens && (
+            <>
+              <input type="hidden" name="userId" value={tokens.userId} />
+              <input type="hidden" name="secret" value={tokens.secret} />
+            </>
+          )}
           <fieldset disabled={busy} className="flex min-w-0 flex-col gap-4">
             {mode === "sign-up" && (
               <div className="min-w-0">
@@ -602,7 +608,6 @@ export function AuthForm({
               <PasswordField
                 name="password"
                 label={isNew ? "Create password" : "Password"}
-                value={password}
                 onChange={setPassword}
                 reveal={reveal}
                 onReveal={() => setReveal(!reveal)}
@@ -705,8 +710,10 @@ export function AuthForm({
               type="submit"
               disabled={busy}
             >
-              {busy ? <Loader2 size={17} className="animate-spin" /> : null}
-              {busy ? "Please wait…" : content.button}
+              {busy ? (
+                <Spinner size={17}/>
+              ) : null}
+              {busy ? content.pending : content.button}
               {!busy && <ArrowRight size={16} />}
             </Button>
           </fieldset>
@@ -774,15 +781,14 @@ function ArrowUpRightIcon() {
   return <span aria-hidden="true">↗</span>;
 }
 
-export function SignOutButton() {
+export function SignOutButton({ menuItem = false, className }: { menuItem?: boolean; className?: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  return (
-    <div>
+  const signOut = (
       <Button
-        variant="outline"
-        className="min-h-11"
+        variant={menuItem ? "ghost" : "outline"}
+        className={className || "min-h-11"}
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -798,13 +804,13 @@ export function SignOutButton() {
           }
         }}
       >
-        {busy ? "Signing out…" : "Sign out"}
+        {busy && <Spinner size={16}/>} {busy ? "Signing out…" : "Sign out"}
       </Button>
-      {error && (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
+  );
+  return (
+    <>
+      {menuItem ? <DropdownMenu.Item asChild onSelect={(event) => event.preventDefault()}>{signOut}</DropdownMenu.Item> : signOut}
+      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+    </>
   );
 }

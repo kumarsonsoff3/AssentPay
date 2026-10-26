@@ -5,7 +5,7 @@ import {
   ListChecks,
   ReceiptText,
   RefreshCcw,
-} from "lucide-react";
+} from "@/components/icons";
 import { PaymentLifecycle } from "@/components/payment-lifecycle";
 
 const features = [

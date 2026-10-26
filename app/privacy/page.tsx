@@ -4,7 +4,7 @@ import { PreviewNotice } from "@/components/preview-notice";
 export const metadata: Metadata = {
   title: "Preview privacy notice — AssentPay",
   description:
-    "How the current AssentPay product demonstration works and what is planned before live integrations launch.",
+    "How AssentPay handles development accounts, workspaces, and connected tools.",
   robots: { index: false, follow: true },
 };
 
@@ -19,8 +19,8 @@ export default function PrivacyPage() {
           text: "The names, messages, agreements, invoices, and transactions shown in the preview are fictional examples. The interactive controls change the demonstration in your browser.",
         },
         {
-          title: "No connected business accounts",
-          text: "This preview does not provide account registration, connect to an inbox or messaging workspace, or process PayPal payments. Please use fictional values when trying the demo controls.",
+          title: "Development accounts and connected tools",
+          text: "Development accounts and workspaces use Appwrite for authentication, profiles, preferences, and team memberships. Connected Gmail mailboxes synchronize recent messages, contact details and attachment metadata into private workspace storage. Selected attachments can be imported into encrypted document storage. Background jobs, provider events and workspace changes create activity records and notifications. Gmail consent includes send permission for future approved customer emails; sending is not enabled yet. Gmail and Slack tokens and per-workspace PayPal sandbox credentials are encrypted. Disconnecting stops access through the connection and hides that connection’s imported records; it does not erase retained records or revoke the provider grant. You can revoke grants in the provider’s account settings. AI financial execution is not enabled.",
         },
         {
           title: "Before the live product",

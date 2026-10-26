@@ -1,4 +1,4 @@
-import { Check, FileSearch, History, Link2 } from "lucide-react";
+import { Check, FileSearch, History, Link2 } from "@/components/icons";
 import { MemoryIntelligencePreview } from "@/components/memory-intelligence-preview";
 
 const benefits = [

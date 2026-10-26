@@ -1,3 +1,4 @@
+import { LoadingState } from "@/components/feedback/feedback";
 import { AuthPanel } from "@/components/auth/auth-shell";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -14,7 +15,7 @@ export default function ResetPasswordPage({
 }) {
   return (
     <AuthPanel compact>
-      <Suspense fallback={<p role="status">Loading password reset…</p>}>
+      <Suspense fallback={<LoadingState title="Loading password reset…" />}>
         <AuthScreen mode="reset-password" searchParams={searchParams} />
       </Suspense>
     </AuthPanel>

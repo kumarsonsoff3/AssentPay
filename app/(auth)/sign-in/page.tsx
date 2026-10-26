@@ -1,3 +1,4 @@
+import { LoadingState } from "@/components/feedback/feedback";
 import { AuthPanel } from "@/components/auth/auth-shell";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -14,7 +15,7 @@ export default function SignInPage({
 }) {
   return (
     <AuthPanel>
-      <Suspense fallback={<p role="status">Loading sign in…</p>}>
+      <Suspense fallback={<LoadingState title="Loading sign in…" />}>
         <AuthScreen mode="sign-in" searchParams={searchParams} />
       </Suspense>
     </AuthPanel>

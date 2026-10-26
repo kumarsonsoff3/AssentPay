@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowUpRight, Menu } from "lucide-react";
+import { ArrowUpRight, Menu } from "@/components/icons";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
+import type { LandingEntry } from "@/lib/workspaces/destination";
 import {
   Sheet,
   SheetClose,
@@ -20,7 +21,11 @@ const links = [
   { label: "Integrations", href: "#integrations" },
 ];
 
-export function SiteHeader() {
+export function SiteHeader({
+  entry = { href: "/sign-up", label: "Get started", signedIn: false },
+}: {
+  entry?: LandingEntry;
+}) {
   return (
     <header className="relative z-30 border-b border-navy/6 bg-white/90">
       <div className="page-shell flex h-16 items-center justify-between gap-6 lg:h-18">
@@ -40,15 +45,17 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="hidden items-center gap-5 lg:flex">
-          <a
-            href="/sign-in"
-            className="flex min-h-11 items-center text-xs font-medium text-navy/75 hover:text-primary"
-          >
-            Sign in
-          </a>
+          {!entry.signedIn && (
+            <a
+              href="/sign-in"
+              className="flex min-h-11 items-center text-xs font-medium text-navy/75 hover:text-primary"
+            >
+              Sign in
+            </a>
+          )}
           <Button asChild className="h-11 rounded-lg px-5 text-xs shadow-none">
-            <a href="/sign-up">
-              Get started <ArrowUpRight className="ml-1 size-3.5" />
+            <a href={entry.href}>
+              {entry.label} <ArrowUpRight className="ml-1 size-3.5" />
             </a>
           </Button>
         </div>
@@ -86,18 +93,20 @@ export function SiteHeader() {
                   </a>
                 </SheetClose>
               ))}
-              <SheetClose asChild>
-                <a
-                  href="/sign-in"
-                  className="rounded-lg px-3 py-4 text-base font-medium text-navy hover:bg-secondary"
-                >
-                  Sign in
-                </a>
-              </SheetClose>
+              {!entry.signedIn && (
+                <SheetClose asChild>
+                  <a
+                    href="/sign-in"
+                    className="rounded-lg px-3 py-4 text-base font-medium text-navy hover:bg-secondary"
+                  >
+                    Sign in
+                  </a>
+                </SheetClose>
+              )}
               <SheetClose asChild>
                 <Button asChild className="mt-5 h-12">
-                  <a href="/sign-up">
-                    Get started <ArrowUpRight className="size-4" />
+                  <a href={entry.href}>
+                    {entry.label} <ArrowUpRight className="size-4" />
                   </a>
                 </Button>
               </SheetClose>

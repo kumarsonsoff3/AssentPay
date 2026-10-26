@@ -1,11 +1,10 @@
 import {
-  ArrowRight,
   ArrowUpRight,
   Check,
   CirclePlay,
   ShieldCheck,
   Sparkles,
-} from "lucide-react";
+} from "@/components/icons";
 import {
   DiscordMark,
   GmailMark,
@@ -20,18 +19,18 @@ import { AgentMemory } from "@/components/agent-memory";
 import { PayPalCapabilities } from "@/components/paypal-capabilities";
 import { ApprovalSection } from "@/components/approval-section";
 import { FinalCta, GettingStarted, LandingFaq, SiteFooter } from "@/components/landing-close";
-import { SiteHeader } from "@/components/site-header";
+import { LandingHeader, LandingAction } from "@/components/landing-entry";
 import { WorkflowDemo } from "@/components/workflow-demo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const integrations = [
-  { name: "Email", icon: GmailMark },
+  { name: "Email forwarding", icon: GmailMark },
   { name: "Slack", icon: SlackMark },
+  { name: "PayPal", icon: PayPalMark },
   { name: "WhatsApp", icon: WhatsAppMark, soon: true },
   { name: "Discord", icon: DiscordMark, soon: true },
   { name: "Telegram", icon: TelegramMark, soon: true },
-  { name: "PayPal", icon: PayPalMark },
 ];
 
 export default function Home() {
@@ -40,7 +39,7 @@ export default function Home() {
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
-      <SiteHeader />
+      <LandingHeader />
       <main id="main-content">
         <section
           className="hero-section relative isolate overflow-hidden"
@@ -72,13 +71,7 @@ export default function Home() {
                 </span>
               </p>
               <div className="hero-actions mt-8 flex flex-wrap gap-3">
-                <Button
-                  asChild
-                  size="lg"
-                  className="hero-primary h-13 gap-5 rounded-lg px-6 text-[13px]"
-                >
-                  <a href="#workflow">Explore the demo <ArrowRight className="size-4" /></a>
-                </Button>
+                <LandingAction className="hero-primary inline-flex h-13 items-center justify-center gap-5 rounded-lg bg-primary px-6 text-[13px] font-medium text-white hover:bg-primary/90" />
                 <Button
                   asChild
                   variant="outline"
@@ -114,7 +107,7 @@ export default function Home() {
         <section
           id="integrations"
           className="relative z-10 scroll-mt-4 border-y border-navy/7 bg-white"
-          aria-label="Planned integrations"
+          aria-label="Email forwarding and integrations"
         >
           <div className="page-shell integration-strip">
             <div className="shrink-0">
@@ -123,7 +116,7 @@ export default function Home() {
                 <br className="hidden xl:block" /> A smarter connection.
               </p>
               <p className="mt-1 text-[9px] text-muted-foreground">
-                Planned integrations
+                Email forwarding · Connected tools · More coming
               </p>
             </div>
             <div className="integration-items">

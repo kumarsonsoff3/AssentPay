@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
+import { ToastProvider } from "@/components/feedback/toast-provider";
 import "./globals.css";
 import "./dashboard-preview.css";
 import "./landing-sections.css";
@@ -35,7 +37,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       data-scroll-behavior="smooth"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <Script src="/auth-form-pending.js" strategy="beforeInteractive" />
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

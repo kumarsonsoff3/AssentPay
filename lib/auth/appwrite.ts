@@ -16,6 +16,19 @@ export function createAccount(session?: string, admin = false) {
   return new Account(client);
 }
 
+export async function clearSessionCookies() {
+  const store = await cookies();
+  for (const name of [
+    SESSION_COOKIE,
+    "assentpay-oauth-state",
+    "assentpay-workspace",
+    "assentpay-invitation",
+    "assentpay-connect-gmail",
+    "assentpay-connect-slack",
+  ])
+    store.delete(name);
+}
+
 export async function saveSession(session: Models.Session) {
   if (!session.secret)
     throw new Error(

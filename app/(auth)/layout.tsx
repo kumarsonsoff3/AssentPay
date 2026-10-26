@@ -4,7 +4,9 @@ import { AuthShell } from "@/components/auth/auth-shell";
 export const metadata: Metadata = {
   title: { template: "%s | AssentPay", default: "Your account | AssentPay" },
   robots: { index: false, follow: false },
-  referrer: "no-referrer",
+  // Origin only: keep recovery tokens private while allowing native POSTs to
+  // carry their real Origin for the server's exact-origin CSRF check.
+  referrer: "strict-origin",
 };
 
 export default function AuthLayout({

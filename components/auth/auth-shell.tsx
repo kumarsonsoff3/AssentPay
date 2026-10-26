@@ -5,7 +5,7 @@ import {
   Check,
   ShieldCheck,
   Sparkles,
-} from "lucide-react";
+} from "@/components/icons";
 import { Brand } from "@/components/brand";
 
 async function Copyright() {
@@ -22,7 +22,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
       <header className="flex items-center justify-between gap-4 px-6 py-5 sm:px-10 lg:px-12">
         <Link href="/" aria-label="AssentPay home">
           <span className="sm:hidden">
-            <Brand small />
+            <Brand />
           </span>
           <span className="hidden sm:inline-flex">
             <Brand />
