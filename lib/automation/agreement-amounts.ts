@@ -12,8 +12,20 @@ export const agreementAmountSchema = z.object({
 type AgreementAmount = z.infer<typeof agreementAmountSchema>;
 
 export function requiresAmountReview(category: string, amounts: AgreementAmount[]) {
-  return category === "receipt" || category === "payment_confirmation" || amounts.length > 1 ||
-    amounts.some(({ role }) => ["paid", "contract_total", "installment", "deposit", "fee"].includes(role));
+  if (category === "receipt" || category === "payment_confirmation" ||
+      amounts.some(({ role }) => ["paid", "contract_total", "installment", "deposit", "fee"].includes(role))) return true;
+  if (amounts.length <= 1) return false;
+  if (category !== "invoice" && category !== "payment_request") return true;
+
+  // An invoice can explicitly describe one figure as both the total and the outstanding balance.
+  const [first] = amounts;
+  const value = quotedAmounts(first.amount)[0];
+  const [quotedValue, ...otherValues] = quotedAmounts(first.quote);
+  return !first.currency || value !== quotedValue || otherValues.length > 0 || !amounts.every(amount =>
+    (amount.role === "invoice_total" || amount.role === "outstanding") &&
+    amount.currency === first.currency && amount.sourceId === first.sourceId &&
+    amount.quote === first.quote && quotedAmounts(amount.amount)[0] === value,
+  );
 }
 
 export const amountRoleLabel = {
