@@ -61,3 +61,12 @@ export const analysisExtractionSchema = extractionSchema.extend({
 });
 
 export type Extraction = z.infer<typeof extractionSchema>;
+
+export function quotedRecipientEmail(proposal: { evidenceValid?: boolean; extraction?: { evidence?: { quote: string }[] } }) {
+  if (proposal?.evidenceValid !== true || !Array.isArray(proposal.extraction?.evidence)) return null;
+  const addresses = proposal.extraction.evidence.flatMap(entry => typeof entry?.quote === "string"
+    ? entry.quote.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi) ?? [] : []);
+  const unique = new Set(addresses.map(address => address.toLowerCase()));
+  const [email] = addresses;
+  return unique.size === 1 && email.length <= 254 ? email : null;
+}

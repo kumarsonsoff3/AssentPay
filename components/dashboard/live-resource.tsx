@@ -14,7 +14,7 @@ import { ProcessingActivity } from "./processing-activity";
 import { ConversationWorkspace } from "./conversation-workspace";
 import { displayTime, ActivityTimeline, ActivityEmpty } from "./workspace-presenters";
 import { EmptyState } from "./states";
-import { isCurrencyCode } from "@/lib/automation/extraction";
+import { isCurrencyCode, quotedRecipientEmail } from "@/lib/automation/extraction";
 import { amountRoleLabel } from "@/lib/automation/agreement-amounts";
 import type { PayPalTrace } from "@/lib/automation/paypal-trace";
 import type { ReviewedTerms } from "@/lib/automation/reviewed-terms";
@@ -345,6 +345,8 @@ function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: It
   const payout = item.action === "pay_supplier" || (item.proposal as Proposal | undefined)?.intendedAction === "pay_supplier";
   const providerId = str(item, "providerId");
   const proposal = (item.proposal || {}) as Proposal;
+  const sourceEmail = quotedRecipientEmail(proposal);
+  const sendRecipient = sendReview?.snapshot.invoice.primary_recipients?.[0]?.billing_info?.email_address;
   const recipientList = useId();
   const [contacts, setContacts] = useState<Item[] | null>(null);
   async function loadContacts() {
@@ -382,8 +384,20 @@ function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: It
     </form>}
     {canApprove && item.status === "reconciliation_required" && <form onSubmit={(event) => { event.preventDefault(); void mutate(`workflows/${item.id}`, { action: "recover", providerId: recoveryId }); }}><label>Existing sandbox invoice ID<input required pattern="INV2-[A-Z0-9-]{8,100}" value={recoveryId} onChange={event => setRecoveryId(event.target.value)} /></label><p>Verify and bind an existing invoice under the original account. No replacement invoice is created.</p><button disabled={busy}>Verify existing invoice</button></form>}
     {item.action === "review" && ["draft_created", "send_approved"].includes(str(item, "status")) && <p>Sending is on hold. Review the conflicting obligation evidence.</p>}
-    {canApprove && item.status === "draft_created" && item.action !== "review" && <div><button disabled={busy} onClick={() => void mutate("workflows/"+item.id,{action:"review_send"})}>Verify unsent sandbox invoice for separate send approval</button>{sendReview && <form onSubmit={event=>{event.preventDefault();void mutate("workflows/"+item.id,{action:"approve_send",snapshotHash:sendReview.snapshotHash});}}><p>Send existing sandbox invoice {sendReview.snapshot.providerId} to {sendReview.snapshot.invoice.primary_recipients?.[0]?.billing_info?.email_address} · {sendReview.snapshot.invoice.amount?.currency_code} {sendReview.snapshot.invoice.amount?.value}. Reference: {sendReview.snapshot.invoice.detail?.reference}. Issue date: {sendReview.snapshot.invoice.detail?.invoice_date || "current date"}. Future issue dates schedule delivery.</p><p>Sandbox application credentials are bound; merchant account identity is not independently verified. This separate approval authorizes PayPal to email the customer and merchant. It does not charge the customer. Review expires: {sendReview.expiresAt}.</p><p>Only approval-critical invoice fields are shown. Additional provider account details remain private.</p><button className={styles.workflowPrimary} disabled={busy}>Approve sending this exact sandbox invoice</button>
-      <button type="button" disabled={busy} onClick={() => void mutate("slack-identity", {action: "prepare-send", workflowId: item.id, snapshotHash: sendReview.snapshotHash})}>Send approval card to Slack</button></form>}</div>}
+    {canApprove && item.status === "draft_created" && item.action !== "review" && <div>
+      <button disabled={busy} onClick={() => void mutate(`workflows/${item.id}`, { action: "review_send" })}>Verify unsent sandbox invoice for separate send approval</button>
+      {sendReview && <form onSubmit={event => {
+        event.preventDefault();
+        void mutate(`workflows/${item.id}`, { action: "approve_send", snapshotHash: sendReview.snapshotHash });
+      }}>
+        <p>PayPal will email this sandbox invoice to <strong className={styles.quotedEmail}>{sendRecipient}</strong> for <strong>{sendReview.snapshot.invoice.amount?.currency_code} {sendReview.snapshot.invoice.amount?.value}</strong>.</p>
+        {sourceEmail && sendRecipient && sourceEmail.toLowerCase() !== sendRecipient.toLowerCase() && <InlineFeedback tone="error">The source quotes {sourceEmail}. Verify the draft recipient before sending.</InlineFeedback>}
+        <p>Invoice {sendReview.snapshot.providerId}. Reference {sendReview.snapshot.invoice.detail?.reference}. Issue date {sendReview.snapshot.invoice.detail?.invoice_date || "today"}. PayPal schedules delivery for a future issue date.</p>
+        <p>This approval authorizes PayPal to email the invoice to the customer and merchant. The review expires at <time dateTime={sendReview.expiresAt}>{new Date(sendReview.expiresAt).toLocaleString()}</time>.</p>
+        <button className={styles.workflowPrimary} disabled={busy}>Approve sending this exact sandbox invoice</button>
+        <button type="button" disabled={busy} onClick={() => void mutate("slack-identity", { action: "prepare-send", workflowId: item.id, snapshotHash: sendReview.snapshotHash })}>Send approval card to Slack</button>
+      </form>}
+    </div>}
     {canApprove && ["send_reconciliation_required","send_approved"].includes(str(item,"status")) && <div><p>Send authorized or uncertain. Never resend. Verify the existing invoice using GET-only recovery.</p><button disabled={busy} onClick={()=>void mutate("workflows/"+item.id,{action:"recover_send"})}>Reconcile existing send (read only)</button></div>}
     {typeof item.paymentLink === "string" && ["invoice_sent","unpaid","payment_pending","partially_paid"].includes(str(item,"status")) && <a href={item.paymentLink} target="_blank" rel="noopener noreferrer">Open invoice in PayPal sandbox <ArrowUpRight size={14} /></a>}
     {item.status === "paid" && <p>PayPal reports PAID. Sandbox only; no live settlement.</p>}
@@ -392,6 +406,11 @@ function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: It
       {item.status === "pending_approval" && <form onSubmit={(event) => { event.preventDefault(); void mutate(`workflows/${item.id}`, {action:"approve", proposalHash:item.proposalHash, recipientEmail:recipient}); }}>
         <label>{payout ? "Supplier PayPal email" : "Customer email for this draft"}<input type="email" required maxLength={payout ? 127 : 254} list={recipientList} onFocus={() => void loadContacts()} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>
         <datalist id={recipientList}>{contacts?.map(contact => <option key={contact.id} value={str(contact, "email")} label={str(contact, "displayName")} />)}</datalist>
+        {sourceEmail && <div>
+          <p>Quoted source email <strong className={styles.quotedEmail}>{sourceEmail}</strong></p>
+          {recipient.trim().toLowerCase() !== sourceEmail.toLowerCase() && <button type="button" className={styles.reviewSecondary} disabled={busy} onClick={() => setRecipient(sourceEmail)}>Use quoted email</button>}
+          {recipient.trim() && recipient.trim().toLowerCase() !== sourceEmail.toLowerCase() && <p role="status">The email entered above differs from the quoted source. Verify the intended recipient.</p>}
+        </div>}
         <p>{payout ? "Approval sends the exact listed amount to this supplier in PayPal sandbox." : "Approval creates the proposed PayPal sandbox draft invoice for this customer. It does not send the invoice or move money."}</p>
         <button className={styles.workflowPrimary} disabled={busy}>{busy && <Spinner size={15}/>} {payout ? "Approve PayPal sandbox payout" : "Approve PayPal invoice draft"}</button>
       </form>}
@@ -459,7 +478,7 @@ function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: It
     </div>
   </div>;
 }
-type Proposal = { ownerReviewedTerms?: ReviewedTerms; amounts?: { role: keyof typeof amountRoleLabel; amount: string; currency: string | null; label: string; sourceId: string; quote: string }[]; intendedAction?: string; triage?: { reasons?: string[]; senderHistory?: { senderEmail?: string; coverageLimited?: boolean; matches?: { messageId: string; category: string; reference?: string }[] } }; consequence?: string; duplicateOf?: string; agreementWorkflowId?: string; warnings?: string[]; extraction?: { category?: string; purpose?: string; reference?: string; dueDate?: string; paymentTerms?: string; direction?: string; confidence?: number; evidence?: {sourceId: string; quote: string}[]; uncertainties?: string[] } };
+type Proposal = { evidenceValid?: boolean; ownerReviewedTerms?: ReviewedTerms; amounts?: { role: keyof typeof amountRoleLabel; amount: string; currency: string | null; label: string; sourceId: string; quote: string }[]; intendedAction?: string; triage?: { reasons?: string[]; senderHistory?: { senderEmail?: string; coverageLimited?: boolean; matches?: { messageId: string; category: string; reference?: string }[] } }; consequence?: string; duplicateOf?: string; agreementWorkflowId?: string; warnings?: string[]; extraction?: { category?: string; purpose?: string; reference?: string; dueDate?: string; paymentTerms?: string; direction?: string; confidence?: number; evidence?: {sourceId: string; quote: string}[]; uncertainties?: string[] } };
 function FinancialEvidence({proposal}: {proposal: unknown}) {
   const data = (proposal || {}) as Proposal, extracted = data.extraction;
   return <div className={styles.evidenceContent}>

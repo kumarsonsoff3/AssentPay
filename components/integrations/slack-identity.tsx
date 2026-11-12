@@ -13,6 +13,7 @@ type Workflow = {
   currency: string;
   status: string;
   action: string;
+  sourceEmail: string | null;
 };
 
 export function SlackIdentity({ workspaceId, initiallyLinked, workflow }: {
@@ -71,6 +72,13 @@ export function SlackIdentity({ workspaceId, initiallyLinked, workflow }: {
         {canApprove && <label>{workflow.action === "pay_supplier" ? "Supplier’s PayPal email" : "Customer’s invoice email"}
           <input type="email" required maxLength={workflow.action === "pay_supplier" ? 127 : 254} value={recipientEmail} onChange={event => setRecipientEmail(event.target.value)} />
         </label>}
+        {canApprove && workflow.sourceEmail && <div className={styles.sourceEmail}>
+          <p>Quoted source email <strong>{workflow.sourceEmail}</strong></p>
+          {recipientEmail.trim().toLowerCase() !== workflow.sourceEmail.toLowerCase() && <>
+            <button type="button" disabled={busy} onClick={() => setRecipientEmail(workflow.sourceEmail!)}>Use quoted email</button>
+            {recipientEmail.trim() && <p role="status">The email entered above differs from the quoted source. Verify the intended recipient.</p>}
+          </>}
+        </div>}
         <button className={canApprove ? styles.primary : undefined} disabled={busy}>{canApprove ? "Send approval buttons to my Slack" : "Send review card to my Slack"}</button>
       </form>}
     </section>}

@@ -1323,6 +1323,7 @@
 .evidencePanel, .decisionPanel { min-width:0; padding:clamp(14px, 3cqi, 20px); border:1px solid #dfe7f3; border-radius:12px; color:#43597b; background:#fff; }
 .decisionPanel { background:#f8faff; container-type:inline-size; }
 .paypalHeading { display:flex; align-items:center; gap:8px; }
+.quotedEmail { overflow-wrap:anywhere; }
 .evidencePanel h3, .decisionPanel h3 { margin:0 0 12px; font-size:16px; font-weight:650; color:#172a49; }
 .evidenceContent p { margin:8px 0; }
 .evidenceContent .evidencePurpose { color:#253650; font-weight:600; }
