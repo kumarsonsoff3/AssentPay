@@ -33,7 +33,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await workspaceAccess(id, user.$id);
     assertAppOrigin(request, authConfig().origin);
     rateLimit("studio-agent", user.$id, 60);
-    const parsed = input.safeParse(await readJsonBody(request, 256 * 1024));
+    // AG Studio tool definitions contain nested JSON Schemas for widget options and filters.
+    const parsed = input.safeParse(await readJsonBody(request, 256 * 1024, 64));
     if (!parsed.success) throw new InputError("Studio can use text and dashboard tools only.");
     const body = parsed.data;
     const { key, model } = analysisConfiguration();

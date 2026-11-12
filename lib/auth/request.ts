@@ -43,13 +43,13 @@ export async function readBody(request: Request, limit: number, mediaType: strin
   }
 }
 
-export async function readJsonBody(request: Request, limit: number) {
+export async function readJsonBody(request: Request, limit: number, maxDepth = 20) {
   const text = await readBody(request, limit, "application/json");
   try {
     const result: unknown = JSON.parse(text);
     if (!result || typeof result !== "object" || Array.isArray(result))
       throw new Error();
-    assertSafeStructure(result);
+    assertSafeStructure(result, maxDepth);
     return result as Record<string, unknown>;
   } catch {
     throw new InputError("Invalid request body.");
@@ -58,13 +58,13 @@ export async function readJsonBody(request: Request, limit: number) {
 
 // Reject ambiguous object keys and excessive nesting before downstream code
 // merges or traverses user input. Field validators still enforce each schema.
-function assertSafeStructure(value: unknown, depth = 0) {
-  if (depth > 20) throw new InputError("Request is too deeply nested.");
+function assertSafeStructure(value: unknown, maxDepth: number, depth = 0) {
+  if (depth > maxDepth) throw new InputError("Request is too deeply nested.");
   if (!value || typeof value !== "object") return;
   for (const [key, item] of Object.entries(value)) {
     if (["__proto__", "prototype", "constructor"].includes(key))
       throw new InputError("Invalid request field.");
-    assertSafeStructure(item, depth + 1);
+    assertSafeStructure(item, maxDepth, depth + 1);
   }
 }
 
