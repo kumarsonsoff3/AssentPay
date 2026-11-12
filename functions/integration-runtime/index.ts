@@ -28,9 +28,12 @@ import { sealCredentials } from "../../lib/integrations/credentials";
 import { assertEncryption } from "../../lib/integrations/crypto";
 import { InputError, validId, text } from "../../lib/workspaces/validation";
 import { object } from "../../lib/data/model";
-import { secretMigrationId } from "../../lib/data/secret-schema";
+import { secretMigrationId } from "../../lib/data/schema";
 import { isConflict } from "../../lib/data/repositories";
-import { dispatchAutomation } from "../../lib/automation/runner";
+import {
+  dispatchAutomation,
+  dispatchCreatedJob,
+} from "../../lib/automation/runner";
 import { acceptPaypalEvent } from "../../lib/automation/paypal";
 type Context = {
   req: {
@@ -62,9 +65,26 @@ export default async function handler({ req, res }: Context) {
       return await withDataClient(client, () =>
         withCredentialExecution(async () => {
           assertEncryption();
-          if(req.headers["x-appwrite-trigger"]==="event"&&req.headers["x-appwrite-event"]?.includes(".automation_jobs.")) {
-            const event=object(req.bodyJson??JSON.parse(req.bodyText||"{}"));
-            if(event.status!=="queued")return res.json({status:"ignored"});
+          if (req.headers["x-appwrite-trigger"] === "event") {
+            const eventName = req.headers["x-appwrite-event"];
+            const prefix = `tablesdb.${databaseId()}.tables.automation_jobs.rows.`;
+            if (
+              !eventName?.startsWith(prefix) ||
+              !eventName.endsWith(".create")
+            )
+              return res.json({ status: "ignored" });
+            const event = object(
+              req.bodyJson ?? JSON.parse(req.bodyText || "{}"),
+            );
+            if (event.status !== "queued" || typeof event.$id !== "string")
+              return res.json({ status: "ignored" });
+            const jobId = validId(event.$id);
+            if (
+              eventName !== `${prefix}${jobId}.create` &&
+              eventName !== `${prefix}*.create`
+            )
+              return res.json({ status: "ignored" });
+            return res.json(await dispatchCreatedJob(jobId));
           }
           return res.json(await dispatchAutomation());
         }),
@@ -113,7 +133,14 @@ export default async function handler({ req, res }: Context) {
             } as ConnectionCheck),
           );
         if (input.action === "oauth-begin") {
-          if (input.provider === "gmail" && process.env.GMAIL_OAUTH_ENABLED !== "true") throw new InputError("Gmail OAuth is disabled. Use forwarding.", 403);
+          if (
+            input.provider === "gmail" &&
+            process.env.GMAIL_OAUTH_ENABLED !== "true"
+          )
+            throw new InputError(
+              "Gmail OAuth is disabled. Use forwarding.",
+              403,
+            );
           const workspaceId = validId(text(input, "workspaceId", 36)),
             id = validId(text(input, "stateId", 36));
           const provider = input.provider;

@@ -8,12 +8,9 @@
       "runtime": "node-22",
       "execute": [],
       "events": [
-        "tablesdb.assentpay.tables.integrations.rows.*.create",
-        "tablesdb.assentpay.tables.integrations.rows.*.update",
-        "tablesdb.assentpay.tables.automation_jobs.rows.*.create",
-        "tablesdb.assentpay.tables.automation_jobs.rows.*.update"
+        "tablesdb.assentpay.tables.automation_jobs.rows.*.create"
       ],
-      "schedule": "* * * * *",
+      "interval": 5,
       "timeout": 120,
       "enabled": true,
       "logging": false,

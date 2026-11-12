@@ -21,6 +21,7 @@ const field = (key: string, type: Column["type"], required = true): Column => ({
 });
 const common = [field("schemaVersion", "integer"), v("revision", 32)];
 export const migrationId = "001_normalized_core";
+export const secretMigrationId = "003_encrypted_secrets";
 export const journal: Table = {
   id: "schema_migrations",
   columns: [
@@ -135,7 +136,7 @@ export function inspectTable(
     missingIndexes: Index[] = [];
   let pending = false;
   for (const col of expected.columns) {
-    const found = actual.columns.find((c) => c.key === col.key);
+    const found = actual.columns.find(c => c.key === col.key);
     if (!found) {
       missingColumns.push(col);
       continue;
@@ -152,7 +153,7 @@ export function inspectTable(
     pending ||= found.status !== "available";
   }
   for (const index of expected.indexes) {
-    const found = actual.indexes.find((i) => i.key === index.key);
+    const found = actual.indexes.find(i => i.key === index.key);
     if (!found) {
       missingIndexes.push(index);
       continue;

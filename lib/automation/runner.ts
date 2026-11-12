@@ -48,12 +48,13 @@ async function validConnection(job: Job, db = dataDatabase(), tx?: string) {
     meta.provider === "paypal" ? ["owner"] : ["owner", "admin"],
   );
 }
-async function claim(id: string) {
+async function claim(id: string, queuedOnly: boolean) {
   return currentOperation().commit(async (db, tx) => {
     const row = (await db.getRow(
         params("automation_jobs", id, tx),
       )) as unknown as Job,
       now = Date.now();
+    if (queuedOnly && row.status !== "queued") return null;
     if (
       (!["queued", "retry"].includes(row.status) ||
         Date.parse(row.nextAttemptAt) > now) &&
@@ -71,8 +72,8 @@ async function claim(id: string) {
     return { ...row, ...data } as Job;
   });
 }
-export async function processJob(id: string) {
-  const job = await claim(id);
+export async function processJob(id: string, queuedOnly = false) {
+  const job = await claim(id, queuedOnly);
   if (!job) return { status: "busy" };
   const startedAt = job.requestedAt;
   const commit: GuardedCommit = (write) =>
@@ -287,6 +288,13 @@ export function dispatchKinds(options: { inboxOnly?: boolean; analysisOnly?: boo
   if ([options.inboxOnly, options.analysisOnly, options.triageOnly].filter(Boolean).length > 1) throw new InputError("Choose one worker mode.");
   return options.inboxOnly ? ["resend-ingest"] : options.analysisOnly ? ["resend-ingest", "financial-analyze"] : options.triageOnly ? ["resend-ingest", "financial-analyze", "financial-slack-notify", "slack-card-delivery", "workflow-reminder"] : undefined;
 }
+export async function dispatchCreatedJob(id: string) {
+  const job = await optionalRow("automation_jobs", id);
+  if (job?.status !== "queued" || !(Date.parse(job.nextAttemptAt) <= Date.now()))
+    return { status: "ignored" };
+  return withStorageOperation("worker", () => processJob(id, true));
+}
+
 export async function dispatchAutomation(options: { inboxOnly?: boolean; analysisOnly?: boolean; triageOnly?: boolean } = {}) {
   const kinds = dispatchKinds(options);
   return withStorageOperation("worker", async () => {

@@ -1,6 +1,6 @@
 import { schedules, task } from "@trigger.dev/sdk";
 import { invokeIntegrationFunction } from "../../lib/integrations/function-client";
-// Appwrite's private minute schedule is the primary dispatcher. This task is an
+// Appwrite's private interval is the primary dispatcher. This task is an
 // optional Trigger.dev failover; transactional leases make overlapping runs safe.
 export const dispatchAutomationTask = task({
   id: "dispatch-workspace-automation",
@@ -12,5 +12,8 @@ export const catchUpAutomation = schedules.task({
   id: "catch-up-workspace-automation",
   cron: "*/5 * * * *",
   maxDuration: 120,
-  run: async () => invokeIntegrationFunction({ action: "automation-dispatch" }),
+  run: async () =>
+    process.env.TRIGGER_AUTOMATION_FAILOVER_ENABLED === "true"
+      ? invokeIntegrationFunction({ action: "automation-dispatch" })
+      : { status: "disabled" },
 });

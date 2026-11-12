@@ -14,7 +14,8 @@ import { documentBucketId } from "./schema";
 import type { GuardedCommit } from "./gmail-sync";
 import { analysisConfiguration, requestAnalysis, type AnalysisContent } from "./ai-provider";
 export { extractionSchema, type Extraction } from "./extraction";
-import { extractionSchema } from "./extraction";
+import { extractionSchema, isCurrencyCode } from "./extraction";
+import { rupeeEvidence } from "./rupee-evidence";
 export const proposalHash = (proposal: string) => createHash("sha256").update(proposal).digest("hex");
 export async function analyzeMessage(job: Job, commit: GuardedCommit) {
   const { messageId } = JSON.parse(job.payloadJson), mail = await optionalRow("mail_messages", messageId);
@@ -78,8 +79,17 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
   );
   const parsed = extractionSchema.safeParse(output);
   if (!parsed.success) throw new InputError("Financial analysis did not match the required schema.", 502, "AI_INVALID_OUTPUT");
-  const extracted = parsed.data;
+  const extracted = { ...parsed.data, currency: isCurrencyCode(parsed.data.currency) ? parsed.data.currency : null };
   const evidenceValid = extracted.evidence.length > 0 && extracted.evidence.every((e) => sources[e.sourceId]?.includes(e.quote) && e.quote.trim().length > 0);
+  const quotes = evidenceValid ? extracted.evidence.map(e => e.quote) : [];
+  const sourceTexts = Object.values(sources);
+  let rupee = rupeeEvidence(extracted.amount, quotes, sourceTexts, false);
+  if (rupee === "ambiguous" && (!extracted.currency || extracted.currency === "INR")) {
+    const workspace = await optionalRow("workspaces", job.workspaceId);
+    rupee = rupeeEvidence(extracted.amount, quotes, sourceTexts, workspace?.country === "IN" && workspace.currency === "INR");
+  }
+  if (rupee === "explicit" || rupee === "workspace") extracted.currency = "INR";
+  else if (rupee === "ambiguous" && extracted.currency === "INR") extracted.currency = null;
   const reasons = triageReasons(extracted, senderHistory, documents.rows.map(doc => ({ filename: String(doc.filename), status: String(doc.status), textExtracted: !!sources[doc.$id] })), `${mail.subject}\n${body.text || ""}`);
   const financial = reasons.length > 0;
   const billingRequest = supportedBillingIntent(extracted);
@@ -168,7 +178,7 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
       else await db.createRow({ ...params("financial_claims", claimId, tx), permissions: [], data: { workspaceId: job.workspaceId, workflowId: messageId, fingerprint } });
     }
     const proposal = JSON.stringify({
-      extraction: extracted, warnings, evidenceValid, obligationEvidence, triage: { reasons, senderHistory },
+      extraction: extracted, warnings, evidenceValid, obligationEvidence, rupeeEvidence: rupee, triage: { reasons, senderHistory },
       sourceMessageId: messageId, duplicateOf, agreementWorkflowId: agreement?.$id || null, intendedAction: action,
       consequence: ready ? supplierPayout ? "Send the exact approved sandbox payout to the supplier email selected by the owner." : "Create a PayPal sandbox draft invoice for the customer email selected by the owner. No invoice is sent and no money moves."
         : isDuplicate ? "Possible duplicate financial request. Review the existing workflow before taking any action."

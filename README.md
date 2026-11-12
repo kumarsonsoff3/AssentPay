@@ -6,10 +6,11 @@ credentials and requires workspace-owner approval.
 
 ## Development
 
-Use Node.js 22 or newer and npm.
+Use Node.js 22.9 or newer and npm.
 
-Repository-owned scripts and regression tests are retained for reproducible builds.
-Generated bundles, backups and environment files remain ignored.
+The checkout contains the application, workers, and tooling required to build
+and release them. Local archives, generated bundles, backups and environment
+files are ignored.
 
 ```sh
 npm ci
@@ -33,24 +34,10 @@ it: changing it makes existing integration credentials unreadable.
 The web app receives updates and queues work; an active private worker processes
 email imports, document analysis, notifications, and approved financial workflows.
 
-```sh
-# Uses .env; imports received email without AI analysis.
-npm run worker:inbox
-# Uses .env; requires OPENAI_API_KEY and OPENAI_MODEL.
-npm run worker:analysis
-# Uses .env; combines import, analysis, and Slack review alerts without financial execution.
-npm run worker:triage
-# Uses .env.worker; runs the complete dispatcher.
-npm run worker:financial
-```
-
-Populate `.env.worker` with the relevant values from `.env.example`, including
-Appwrite settings, the stable encryption key, integration credentials, and AI
-configuration. A dedicated worker key needs `rows.read`, `rows.write`, `users.read`,
-`teams.read`, `files.read`, and `files.write`.
-
-Alternatively, deploy the private integration Function with its scheduled
-dispatcher. Build locally before deployment:
+Deploy the private Appwrite integration Function as the primary worker. New
+automation jobs trigger the Function on creation. Its five-minute interval
+handles due retries, expired leases and housekeeping. The Function deployment
+includes an offline verifier for its bundled dependencies.
 
 ```sh
 npm run function:build
@@ -59,18 +46,57 @@ npm run function:deploy -- --apply --project=PROJECT_ID --database=assentpay
 npm run function:deploy -- --status
 ```
 
-Trigger.dev handles connection health and optional dispatcher failover. Keep its
-project configuration and deployed environment aligned; run `npm run dev:trigger`
-for local Trigger tasks. Use a single primary dispatcher.
-
 If Activity shows **Receive forwarded email** as completed while **Review
 financial details** is waiting or retrying, the email is already stored. Check
-`npm run function:deploy -- --status` for the minute schedule, automation job
+`npm run function:deploy -- --status` for the five-minute interval, job creation
 subscriptions and presence of both OpenAI settings on the Function. A ready
 deployment can still be missing these settings. Restoring the dispatcher picks
 up queued jobs and scheduled retries; there is no need to resend the email.
 The deployment apply command requires `OPENAI_API_KEY` and `OPENAI_MODEL` in the
 local deployment environment before it changes the live Function.
+
+## Deploy Trigger.dev to production
+
+Use the same revision for the web app, the private Appwrite Function, and the
+Trigger.dev tasks. Deploy the private Function before verifying the tasks. No
+ngrok tunnel is needed for Trigger.dev; it calls Appwrite directly.
+
+1. In Trigger.dev, open the intended project and select **PROD**. Confirm its
+   project ref matches `project` in `trigger.config.ts`.
+2. In the Trigger.dev project's **Environment variables** page, set these for
+   **PROD** only:
+   - `APPWRITE_ENDPOINT` and `APPWRITE_PROJECT_ID`: the production Appwrite target.
+   - `APPWRITE_INTEGRATION_FUNCTION_ID=assentpay-integrations` (use the deployed
+     Function's ID if customized).
+   - `APPWRITE_DATA_API_KEY`: a dedicated Appwrite key with the
+     [function execution scope](https://appwrite.io/docs/references/cloud/server-rest/functions#createExecution)
+     (`executions.write`, also documented as `execution.write`).
+     Store it as a secret. The tasks call the private Function; they do not need
+     database or file scopes, OpenAI keys, or Slack, Resend and PayPal credentials.
+   - `TRIGGER_AUTOMATION_FAILOVER_ENABLED=false`: Appwrite remains the primary
+     dispatcher. The declared catch-up cron may still show Trigger.dev runs,
+     but it returns without invoking Appwrite while this flag is false.
+3. From a clean checkout of the release revision, use the CLI version that
+   matches the SDK in `package-lock.json` (currently 4.7.4). If you export
+   `TRIGGER_PROJECT_REF` in the shell or a local `.env`, confirm it also matches;
+   the CLI can use it to override the config.
+
+   ```sh
+   npm ci
+   npx trigger.dev@4.7.4 login
+   npx trigger.dev@4.7.4 deploy --env prod
+   ```
+
+4. Set the production web host's server-only `TRIGGER_SECRET_KEY` to the
+   **PROD** secret from the same Trigger.dev project. Set
+   `TRIGGER_PROJECT_REF` to that project's ref and deploy the web app.
+5. From the deployed web app, click **Check connection** on a configured
+   integration. Confirm `check-workspace-connection` appears under **PROD →
+   Runs** and that AssentPay shows the resulting connection status.
+
+See the [Trigger.dev CLI deploy guide](https://trigger.dev/docs/cli-deploy-commands).
+Enable Trigger failover only as part of a deliberate switch away from Appwrite's
+interval dispatcher.
 
 ## Integration configuration
 
@@ -104,10 +130,9 @@ local deployment environment before it changes the live Function.
   in `OPENAI_MODEL`. Document vision is opt-in
   with `AI_DOCUMENT_VISION_ENABLED=true`.
 
-Provider secrets and worker configuration must be present in the environment
-where the work runs, including a deployed private Function or Trigger task.
-
-See [current implementation boundaries and rollout gates](docs/implementation-roadmap.md).
+Provider secrets and worker configuration must be present in the web app or
+private Function as appropriate. Trigger tasks only need the Appwrite execution
+settings listed above.
 
 ## Agreement and invoice review
 
@@ -174,121 +199,22 @@ PayPal’s optional [local MCP server](https://developer.paypal.com/ai-tools/mcp
 requires a sandbox access token in the MCP host environment. Use its read tools
 for diagnostics. AssentPay's worker uses workspace credentials independently.
 
-## Database operations
+## Database prerequisites
 
-The migration runner is pending-only for additive 007/008 on an existing, verified
-001–006 installation. It defaults to read-only planning. Start with:
-
-```sh
-npm run db:plan
-npm run db:migrate -- --cli --dry-run
-npm run db:cutover -- status
-```
-
-For a different installation with independently verified missing 007/008, only after
-explicit operator approval apply the pending suffix with all three matching
-targets (the endpoint must match configured APPWRITE_ENDPOINT exactly):
-
-```sh
-npm run db:migrate -- --cli --apply --project=PROJECT_ID --database=assentpay --endpoint=https://REGION.cloud.appwrite.io/v1
-```
-
-The recorded AssentPay target already has 001–008 applied and independently read
-back as of 29 October; see the local schema verification record. Deployment and provider checks are separate release gates.
-
-`db:provision` is a legacy **offline-plan alias**, not fresh provisioning. The
-current runner intentionally refuses missing historical tables/receipts and
-running/partial receipts. Fresh bootstrap is unsupported by this entry point and
-requires a separately reviewed, explicitly authorized provisioning procedure; do
-not delete receipts, repair leases or replay 001–006 to bypass that refusal.
-
-Retain `scripts/`, `appwrite.config.json`, the migration journal, and encrypted
-recovery archives. See [storage operations and recovery](docs/storage-cutover.md)
-for snapshots, reconciliation, activation, and recovery procedures.
+This release targets an existing, normalized Appwrite database with the required
+tables, indexes, buckets and migration receipts (001–008). Deploying the web
+app, Function, or Trigger.dev tasks does not provision a blank database. A new
+Appwrite project needs a separately reviewed provisioning procedure before release.
+Keep the existing migration journal and encrypted recovery snapshots.
 
 ## Verification
 
 ```sh
 npm run lint
 npm run typecheck
-npm test
 npm run build
-# Alternative production compiler when Turbopack IPC is restricted:
-npm run build:webpack
+npm run function:build
 ```
 
-The retained tests cover tenant access, role/input/origin checks, isolated cleanup,
-AI obligation conflicts and memory suppression, immutable approval, concurrent decisions,
-ambiguous payment writes, GET-only recovery, settlement reconciliation and Slack retries. Live provider consent, email delivery,
-and PayPal sandbox behavior require separate verification with configured accounts.
-
-## Overview dashboard audit — 31 October 2026
-
-The app overview at `/dashboard` now reads sandbox invoice face values and active
-memory highlights rather than permanently displaying empty placeholders. Values
-are grouped by currency using exact decimal arithmetic; paid, open and unsent draft
-values remain separate. Manual payment marks, partial/refunded invoices and uncertain
-or unverified records are excluded, and a bounded 1,000-record summary is explicitly
-labelled partial. This is not a cash ledger, bank balance or revenue forecast.
-Memory highlights respect corrections and omit paused, forgotten and expired context.
-Forwarding health uses the same receiving-status rules as inbox setup; recovery
-reviews include uncertain invoice sends. Existing review deep links are preserved.
-
-Local checks after reproducibility follow-up: **120 tests**, typecheck, lint,
-production build, private Function bundle, compile-only Node22 financial-worker
-bundle and diff whitespace validation passed. The retained isolation harness is
-now part of `npm test`: actual signed ingress, analysis, approval and private
-execution run with mocked storage/provider transports and real authority guards.
-It also verifies that multiple invoice references and memory-only financial values
-are held for manual review. Tests cover exact amounts, currency/tenant
-isolation, memory suppression, actual overview query pagination and rendered widgets;
-they do not establish deployed/provider-backed behavior. Browser navigation to
-`http://localhost:3000/dashboard` was refused with `browser navigation blocked by
-policy`, so authenticated browser interaction is unverified.
-
-Configuration-presence inspection (no values printed or changed) found Appwrite,
-encryption, the then-configured AI key/model, Resend and Slack keys present locally; this is not
-credential-validity proof. `RESEND_ATTACHMENT_HOSTS` and `PAYPAL_WEBHOOK_IDS_JSON`
-are unset; configure exact receiving attachment hosts and workspace sandbox webhook
-IDs before those capabilities can be verified. `.env.worker` is absent locally;
-confirm the chosen private worker's deployed environment rather than starting another
-dispatcher. Provider consent/delivery, runtime/domain-row ACL validation (001–008 schema/receipt readiness was recorded
-on 29 October),
-matching web/worker deployment and isolated sandbox E2E remain operator gates.
-
-The official [PayPal Agent Toolkit](https://github.com/paypal/agent-toolkit) guidance
-was reviewed: explicit sandbox context and action allowlists are available, but an
-LLM toolkit must not replace deterministic immutable owner approval/execution guards.
-The existing SDK/REST workflow was retained; no toolkit dependency or additional
-payment authority was introduced. PayPal MCP initialization timed out this run, so
-no MCP-backed provider verification is claimed. No payments, migrations, provider
-messages or deployments were performed during this audit.
-
-
-## Runtime and cleanup follow-up — 31 October 2026
-
-The generated private Function's import-time CommonJS/ESM startup failure is fixed.
-Its production-only dependency graph is now locked, with an offline artifact verifier
-for native PDF and bounded PDF/DOCX/XLSX workers plus private-ingress import. Build
-and run it with `npm run function:build`, install the isolated dependencies using
-`npm ci --omit=dev --include=optional --ignore-scripts --prefix .function-build/integration-runtime`,
-then `npm run function:verify`. Verified on macOS arm64 with Node **22.23.4**;
-Linux/Appwrite execution is still a release gate. The deployment source includes this
-check before activation; no deployment or remote configuration was changed.
-
-Full workers expose privacy-safe cleanup progress. `npm run retention:inspect -- --pages=4`
-provides a bounded GET-only backlog sample; `npm run security:inspect` samples row
-ACL metadata and anonymous visibility without printing row IDs or contents. Current
-readback: no transient rows/backlog; 14 automation jobs have private row ACLs, with
-none visible anonymously. Other inspected financial tables are empty, so populated
-cross-tenant ACL/concurrency behavior remains unverified.
-
-The existing deployed Function is ready/private/Node22 but **drifts from current source**:
-file scopes are absent, schedule/automation subscriptions differ, and its build command
-predates locked installation/artifact verification. `function:deploy -- --status` now
-reports these comparisons. Do not interpret `ready` as matching-code/runtime proof.
-
-Final local checks: **123 tests**, typecheck, lint, production build, Function build,
-isolated native artifact verification and Node22 worker compilation passed. See the local financial retention and release verification record for details.
-Browser policy refusal, deployment, real Appwrite concurrency/populated ACLs, consenting
-provider E2E and operator-specific privacy disclosures still block release completion.
+Use dedicated sandbox recipients and a test Slack owner to verify email delivery,
+financial review, and PayPal status updates after deployment.

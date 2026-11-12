@@ -48,10 +48,17 @@ next-env.d.ts
 playwright.config.ts
 postman/
 
-# Local provider verification records
+# Local archive and guardrails against reintroducing local-only files
+/bin/
 /docs/
-scripts
-tests
+/tests/
+/media/
+
+# Only the Appwrite release tooling belongs in Git
+/scripts/*
+!/scripts/build-integration-function.mjs
+!/scripts/deploy-integration-function.mts
+!/scripts/verify-integration-runtime.mts
 
 # Local-only container setup
 /.dockerignore
