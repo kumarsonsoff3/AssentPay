@@ -46,6 +46,12 @@
   font-size: 11px;
   color: #506685;
 }
+.overviewCash :global(.cash-flow-panel) { border: 0; padding: clamp(14px, 2vw, 22px); }
+.overviewCash :global(.dash-panel-heading p) { font-size: 12px; }
+.overviewCash :global(.chart-legend), .overviewCash :global(.chart-legend strong) { font-size: 12px; }
+.overviewCash :global(.chart-legend select) { min-height: 32px; border: 1px solid #cbd8ee; border-radius: 6px; padding: 3px 6px; background: white; }
+.invoiceTotalsDetails > summary { padding: 10px clamp(14px, 2vw, 22px); color: #254a9e; font-size: 12px; font-weight: 650; cursor: pointer; }
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

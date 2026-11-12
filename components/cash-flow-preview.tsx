@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import type { InvoiceTotals } from "@/lib/dashboard/overview-summary";
 
 const ranges = ["7D", "30D", "90D", "1Y"] as const;
 type Range = (typeof ranges)[number];
@@ -90,32 +91,49 @@ function linePath(points: Point[]) {
     .join(" ");
 }
 
-export function CashFlowPreview() {
+export function CashFlowPreview({ invoices }: {
+  invoices?: { points: { day: string; currencies: InvoiceTotals[] }[]; currencies: string[]; partial: boolean };
+} = {}) {
   const [range, setRange] = useState<Range>("30D");
+  const [selectedCurrency, setSelectedCurrency] = useState("");
   const [activePoint, setActivePoint] = useState<number | null>(null);
   const [width, setWidth] = useState(600);
   const chartRef = useRef<HTMLDivElement>(null);
   const gradientId = useId().replaceAll(":", "");
-  const data = series[range];
-  const format = (value: number) => `$${value.toLocaleString("en-US")}`;
+  const currency = invoices?.currencies.includes(selectedCurrency) ? selectedCurrency : invoices?.currencies[0];
+  const availableRanges = invoices ? ranges.slice(0, 2) : ranges;
+  const days = invoices?.points.slice(range === "7D" ? -7 : -30);
+  const totals = days?.map(point => point.currencies.find(item => item.currency === currency));
+  const dateLabel = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const data = days && totals ? {
+    labels: days.map(point => dateLabel.format(new Date(`${point.day}T00:00:00Z`))),
+    collected: totals.map(point => Number(point?.collected ?? 0)),
+    invoiced: totals.map(point => Number(point?.outstanding ?? 0) + Number(point?.drafts ?? 0)),
+    frequency: "UTC",
+  } : series[range];
+  const title = invoices ? "PayPal invoice totals" : "Cash flow overview";
+  const firstLabel = invoices ? "Verified paid" : "Collected";
+  const secondLabel = invoices ? "Open and draft invoices" : "Invoiced";
+  const headingId = `${gradientId}-heading`;
+  const currencyFormat = currency ? new Intl.NumberFormat("en-US", { style: "currency", currency }) : null;
+  const axisFormat = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
+  const format = (value: number) => currencyFormat?.format(value) ?? `$${value.toLocaleString("en-US")}`;
   const totalCollected = format(
     data.collected.reduce((sum, value) => sum + value, 0),
   );
   const totalInvoiced = format(
     data.invoiced.reduce((sum, value) => sum + value, 0),
   );
-  const scaleMax = Math.max(
-    4000,
-    Math.ceil(Math.max(...data.collected, ...data.invoiced) / 4000) * 4000,
-  );
-  const index = Math.min(
+  const scaleStep = invoices ? 1 : 4000;
+  const scaleMax = Math.max(scaleStep, Math.ceil(Math.max(...data.collected, ...data.invoiced) / scaleStep) * scaleStep);
+  const index = Math.max(0, Math.min(
     activePoint ??
       data.labels.findLastIndex(
         (_, i) => data.collected[i] > 0 || data.invoiced[i] > 0,
       ),
     data.labels.length - 1,
-  );
-  const left = 34;
+  ));
+  const left = invoices ? 57 : 34;
   const right = width - 14;
   const top = 20;
   const bottom = 160;
@@ -141,19 +159,20 @@ export function CashFlowPreview() {
   return (
     <section
       className="dash-panel cash-flow-panel"
-      aria-labelledby="cash-flow-heading"
+      aria-label={invoices ? title : undefined}
+      aria-labelledby={invoices ? undefined : headingId}
     >
       <div className="dash-panel-heading">
         <div>
-          <h4 id="cash-flow-heading">Cash flow overview</h4>
-          <p>Collected vs. invoiced · {data.frequency}</p>
+          {!invoices && <h4 id={headingId}>{title}</h4>}
+          <p>{invoices ? `Current face values by workflow creation date · ${data.frequency}${invoices.partial ? " · Partial data" : ""}` : `Collected vs. invoiced · ${data.frequency}`}</p>
         </div>
         <div
           className="chart-ranges"
           role="group"
-          aria-label="Cash flow date range"
+          aria-label={`${title} date range`}
         >
-          {ranges.map(item => (
+          {availableRanges.map(item => (
             <button
               type="button"
               key={item}
@@ -170,12 +189,19 @@ export function CashFlowPreview() {
         </div>
       </div>
       <div className="chart-legend">
+        {invoices && invoices.currencies.length > 1 && <select aria-label="Invoice currency" value={currency} onChange={event => {
+          setSelectedCurrency(event.target.value);
+          setActivePoint(null);
+        }}>
+          {invoices.currencies.map(code => <option key={code} value={code}>{code}</option>)}
+        </select>}
+        {invoices && invoices.currencies.length === 1 && <span>{currency}</span>}
         <span>
-          <i className="bg-primary" /> Collected{" "}
+          <i className="bg-primary" /> {firstLabel}{" "}
           <strong>{totalCollected}</strong>
         </span>
         <span>
-          <i className="bg-[#93ACFF]" /> Invoiced{" "}
+          <i className="bg-[#93ACFF]" /> {secondLabel}{" "}
           <strong>{totalInvoiced}</strong>
         </span>
       </div>
@@ -186,7 +212,7 @@ export function CashFlowPreview() {
           viewBox={`0 0 ${width} 190`}
           role="img"
           tabIndex={0}
-          aria-label={`Sample ${range} cash flow. Collected ${totalCollected}; invoiced ${totalInvoiced}. Use left and right arrow keys to explore.`}
+          aria-label={`${invoices ? "" : "Sample "}${range} ${title}. ${firstLabel} ${totalCollected}. ${secondLabel} ${totalInvoiced}. Use left and right arrow keys to explore.`}
           onKeyDown={event => {
             if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
               event.preventDefault();
@@ -230,7 +256,7 @@ export function CashFlowPreview() {
             return (
               <g key={value}>
                 <text x="0" y={y + 4} fill="#7182A0" fontSize="10">
-                  {value === 0 ? "$0" : `$${value / 1000}K`}
+                  {invoices ? axisFormat.format(value) : value === 0 ? "$0" : `$${value / 1000}K`}
                 </text>
                 <path
                   d={`M${left} ${y}H${right}`}
@@ -309,20 +335,20 @@ export function CashFlowPreview() {
         <div className="chart-tooltip" aria-hidden="true">
           <strong>
             {data.labels[index]}
-            {range === "1Y" ? " 2026" : ", 2026"}
+            {!invoices && (range === "1Y" ? " 2026" : ", 2026")}
           </strong>
           <span>
-            <i className="bg-[#93ACFF]" /> Invoiced{" "}
+            <i className="bg-[#93ACFF]" /> {secondLabel}{" "}
             <b>{format(data.invoiced[index])}</b>
           </span>
           <span>
-            <i className="bg-primary" /> Collected{" "}
+            <i className="bg-primary" /> {firstLabel}{" "}
             <b>{format(data.collected[index])}</b>
           </span>
         </div>
         <span className="sr-only" aria-live="polite">
-          {data.labels[index]}: collected {format(data.collected[index])},
-          invoiced {format(data.invoiced[index])}.
+          {data.labels[index]}. {firstLabel} {format(data.collected[index])}.
+          {secondLabel} {format(data.invoiced[index])}.
         </span>
       </div>
     </section>

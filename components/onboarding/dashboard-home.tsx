@@ -23,6 +23,7 @@ import {
 } from "@/lib/workspaces/types";
 import { ProviderMark } from "./provider-mark";
 import { EmptyState } from "@/components/dashboard/states";
+import { CashFlowPreview } from "@/components/cash-flow-preview";
 import styles from "@/components/dashboard/dashboard.module.css";
 export function DashboardHome({
   workspace,
@@ -113,13 +114,19 @@ export function DashboardHome({
             detail="Sandbox · All time"
             href="/dashboard/invoices"
           />
-          {operations.cashFlow.currencies.length ? <div className={styles.tableWrap}>
+          {operations.cashFlow.currencies.length ? <>
+            <CashFlowPreview invoices={{ points: operations.invoiceTrend, currencies: operations.cashFlow.currencies.map(item => item.currency), partial: operations.cashFlow.partial }} />
+            <details className={styles.invoiceTotalsDetails}>
+            <summary>All-time totals by currency</summary>
+            <div className={styles.tableWrap}>
             <table>
               <caption className="sr-only">Sandbox invoice face values by currency, all time</caption>
               <thead><tr><th>Currency</th><th>Verified paid</th><th>Open invoices</th><th>Unsent drafts</th></tr></thead>
               <tbody>{operations.cashFlow.currencies.map(item => <tr key={item.currency}><th scope="row">{item.currency}</th><td>{item.collected}</td><td>{item.outstanding}</td><td>{item.drafts}</td></tr>)}</tbody>
             </table>
-          </div> : <EmptyState compact title="No verified invoice values yet" description={paypalConnected ? "Verified drafts, open invoices, and paid invoices appear here as they are processed." : "Connect your PayPal sandbox account to create and track invoices."} href={paypalConnected ? "/dashboard/invoices" : "/dashboard/integrations"} action={paypalConnected ? "View invoices" : "Set up PayPal"} />}
+            </div>
+            </details>
+          </> : <EmptyState compact title="No verified invoice values yet" description={paypalConnected ? "Verified drafts, open invoices, and paid invoices appear here as they are processed." : "Connect your PayPal sandbox account to create and track invoices."} href={paypalConnected ? "/dashboard/invoices" : "/dashboard/integrations"} action={paypalConnected ? "View invoices" : "Set up PayPal"} />}
           <div className={styles.panelFoot}>
             <ShieldCheck size={14} />
             <span>Totals reflect verified invoice face values by currency. Scheduled and partially paid invoices appear in the invoice ledger. {operations.cashFlow.excluded > 0 ? `${operations.cashFlow.excluded} other PayPal invoice records are in the ledger. ` : ""}{operations.cashFlow.partial ? "Partial summary: first 1,000 records only." : ""}</span>
@@ -145,7 +152,7 @@ export function DashboardHome({
                 </tr>
               </thead>
               <tbody>
-                {operations.review.length ? operations.review.map((item) => <tr key={item.id}><td><Link href={"/dashboard/approvals?workflow=" + encodeURIComponent(item.id)}>Review proposal</Link></td><td>{item.counterparty}</td><td>{item.amount ? item.currency ? `${item.currency} ${item.amount}` : `${item.amount} (currency unconfirmed)` : "Review source amounts"}</td><td>{item.status.replaceAll("_", " ")}</td></tr>) : <tr>
+                {operations.review.length ? operations.review.map((item) => <tr key={item.id}><td><Link href={"/dashboard/approvals?workflow=" + encodeURIComponent(item.id)}>{item.status === "pending_approval" ? item.action === "pay_supplier" ? "Review payout approval" : "Review invoice approval" : "Review financial terms"}</Link></td><td>{item.counterparty}</td><td>{item.amount ? item.currency ? `${item.currency} ${item.amount}` : `${item.amount} (currency unconfirmed)` : "Review source amounts"}</td><td>{item.status.replaceAll("_", " ")}</td></tr>) : <tr>
                   <td colSpan={4}>
                     <EmptyState
                       compact

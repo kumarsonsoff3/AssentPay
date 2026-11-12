@@ -12,25 +12,16 @@ import type { AnalyticsData, AnalyticsRow } from "@/lib/dashboard/analytics-mode
 import styles from "./studio-workspace.module.css";
 
 const field = (name: keyof AnalyticsRow) => ({ id: `financial_workflows.${name}` });
-const activityDay = { id: "financial_workflows.updatedDay" };
 const reviewStatuses = new Set(["needs_review", "pending_approval", "duplicate_review"]);
 const initialState: AgReportState = {
   pages: [{
     id: "workspace",
     layout: { minWidth: 310, columns: 12, rowHeight: 45, pagePadding: 14, widgetPadding: 10, widgetBorderRadius: 10 },
     widgets: {
-      activity: {
-        type: "line-chart",
-        dataMapping: {
-          categoryKey: [activityDay],
-          valueKey: [{ ...field("id"), aggregation: "count" }, { id: "financial_workflows.reviewCount", aggregation: "sum" }],
-        },
-        sort: [{ field: activityDay, direction: "asc" }],
-        format: {
-          title: { enabled: true, text: "Workflow activity" },
-          subtitle: { enabled: true, text: "Loaded workflows by last update date (UTC)" },
-          style: { theme: { common: { legend: { enabled: true, position: "bottom" } } } },
-        },
+      status: {
+        type: "column-chart-grouped",
+        dataMapping: { categoryKey: [field("status")], valueKey: [{ ...field("id"), aggregation: "count" }] },
+        format: { title: { enabled: true, text: "Workflow count by status" } },
       },
       workflows: {
         type: "grid",
@@ -39,8 +30,8 @@ const initialState: AgReportState = {
       },
     },
     widgetLayout: {
-      activity: { xTrack: 0, yTrack: 0, xSpan: 12, ySpan: 7 },
-      workflows: { xTrack: 0, yTrack: 7, xSpan: 12, ySpan: 6 },
+      status: { xTrack: 0, yTrack: 0, xSpan: 12, ySpan: 5 },
+      workflows: { xTrack: 0, yTrack: 5, xSpan: 12, ySpan: 6 },
     },
   }],
   selectedPageId: "workspace",
