@@ -12,15 +12,25 @@ import type { AnalyticsData, AnalyticsRow } from "@/lib/dashboard/analytics-mode
 import styles from "./studio-workspace.module.css";
 
 const field = (name: keyof AnalyticsRow) => ({ id: `financial_workflows.${name}` });
+const activityDay = { id: "financial_workflows.updatedDay" };
+const reviewStatuses = new Set(["needs_review", "pending_approval", "duplicate_review"]);
 const initialState: AgReportState = {
   pages: [{
     id: "workspace",
     layout: { minWidth: 310, columns: 12, rowHeight: 45, pagePadding: 14, widgetPadding: 10, widgetBorderRadius: 10 },
     widgets: {
-      status: {
-        type: "column-chart-grouped",
-        dataMapping: { categoryKey: [field("status")], valueKey: [{ ...field("id"), aggregation: "count" }] },
-        format: { title: { enabled: true, text: "Workflow count by status" } },
+      activity: {
+        type: "line-chart",
+        dataMapping: {
+          categoryKey: [activityDay],
+          valueKey: [{ ...field("id"), aggregation: "count" }, { id: "financial_workflows.reviewCount", aggregation: "sum" }],
+        },
+        sort: [{ field: activityDay, direction: "asc" }],
+        format: {
+          title: { enabled: true, text: "Workflow activity" },
+          subtitle: { enabled: true, text: "Loaded workflows by last update date (UTC)" },
+          style: { theme: { common: { legend: { enabled: true, position: "bottom" } } } },
+        },
       },
       workflows: {
         type: "grid",
@@ -29,8 +39,8 @@ const initialState: AgReportState = {
       },
     },
     widgetLayout: {
-      status: { xTrack: 0, yTrack: 0, xSpan: 12, ySpan: 5 },
-      workflows: { xTrack: 0, yTrack: 5, xSpan: 12, ySpan: 6 },
+      activity: { xTrack: 0, yTrack: 0, xSpan: 12, ySpan: 7 },
+      workflows: { xTrack: 0, yTrack: 7, xSpan: 12, ySpan: 6 },
     },
   }],
   selectedPageId: "workspace",
@@ -90,12 +100,19 @@ export function StudioWorkspace({ workspaceId, userId, rows, summary, aiAvailabl
         { id: "currency", name: "Currency", format: "textFormat", cardinality: "low" },
         { id: "amount", name: "Reported or approved amount", format: "textFormat", description: "Display value for the grid. It may be a proposal, and must not be summed." },
         { id: "updatedAt", name: "Last updated (UTC)", format: "dateTimeFormat", description: "Timestamp of the last workflow update. Use for activity trends." },
+        { id: "updatedDay", name: "Update date (UTC)", format: "textFormat", description: "Calendar date of the latest update. Use for daily workflow counts." },
+        { id: "reviewCount", name: "Needs review or approval", format: "integerFormat", description: "Sum to count workflows currently in the review queue." },
       ],
-      data: rows.map(row => ({
-        ...row,
-        status: row.status.replaceAll("_", " ").replace(/^./, letter => letter.toUpperCase()),
-        updatedAt: Number.isFinite(Date.parse(row.updatedAt)) ? new Date(row.updatedAt) : null,
-      })),
+      data: rows.map(row => {
+        const updatedAt = Number.isFinite(Date.parse(row.updatedAt)) ? new Date(row.updatedAt) : null;
+        return {
+          ...row,
+          status: row.status.replaceAll("_", " ").replace(/^./, letter => letter.toUpperCase()),
+          updatedAt,
+          updatedDay: updatedAt?.toISOString().slice(0, 10) ?? null,
+          reviewCount: Number(reviewStatuses.has(row.status)),
+        };
+      }),
     }, {
       id: "invoice_totals",
       name: "Verified invoice totals by currency",
