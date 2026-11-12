@@ -112,9 +112,8 @@ export function supportedBillingIntent(extraction: {
     extraction.category === "payment_request" &&
     extraction.direction === "receivable" &&
     !!extraction.evidence?.some(e =>
-      /\b(?:please (?:invoice|bill) (?:me|us)|(?:send|issue|create) (?:me |us )?(?:an? |the )?invoice|request(?:ing)? (?:an? )?invoice)\b/i.test(
-        e.quote,
-      ),
+      /\bplease\s+(?:invoice|bill)\s+(?:me|us)\b/i.test(e.quote) ||
+      /\b(?:(?:send|issue|create)(?:\s+(?:me|us))?|request(?:ing)?)\s+(?:(?:an?|the|one)\s+)?(?:(?:PayPal(?:\s+sandbox)?|sandbox(?:\s+PayPal)?)\s+)?invoice\b/i.test(e.quote),
     )
   );
 }
