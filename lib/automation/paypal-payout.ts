@@ -53,6 +53,7 @@ const states: Record<string, string> = {
   FAILED: "payout_failed",
   BLOCKED: "payout_blocked",
   DENIED: "payout_failed",
+  CANCELED: "payout_cancelled",
   RETURNED: "payout_returned",
   REFUNDED: "payout_refunded",
   REVERSED: "payout_reversed",
@@ -72,14 +73,21 @@ export async function checkPayout(token: string, id: string, request: PayoutRequ
       header.sender_batch_header?.sender_batch_id !== request.sender_batch_header.sender_batch_id) {
     throw new InputError("PayPal payout does not match the original approval.", 409);
   }
-  if (!batch.items?.length && ["PENDING", "PROCESSING"].includes(header.batch_status)) return "payout_pending";
-  if (!batch.items?.length && header.batch_status === "DENIED") return "payout_failed";
+  const processing = ["PENDING", "PROCESSING"].includes(header.batch_status);
+  if (!batch.items?.length) {
+    if (processing) return "payout_pending";
+    if (["DENIED", "CANCELED"].includes(header.batch_status)) return states[header.batch_status];
+  }
   const actual = batch.items?.[0], item = actual?.payout_item, expected = request.items[0];
   if (batch.items?.length !== 1 || (batch.total_items !== undefined && batch.total_items !== 1) ||
       item?.sender_item_id !== expected.sender_item_id || item.recipient_type !== expected.recipient_type ||
       item.receiver?.toLowerCase() !== expected.receiver.toLowerCase() || item.amount?.currency !== expected.amount.currency ||
       exactAmount(item.amount.value, item.amount.currency) !== expected.amount.value) {
     throw new InputError("PayPal payout does not match the original approval.", 409);
+  }
+  if (!actual.transaction_status) {
+    if (processing) return "payout_pending";
+    if (header.batch_status === "CANCELED") return "payout_cancelled";
   }
   const status = states[actual.transaction_status];
   if (!status) throw new InputError("PayPal payout status requires manual review.", 409);
