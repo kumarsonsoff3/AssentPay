@@ -1,4 +1,5 @@
 import "server-only";
+import { workflowReviewStatuses } from "./analytics-model";
 import { memoryHighlight, summarizeInvoices, type CashFlowSummary, type InvoiceTotals, type MemoryHighlight } from "./overview-summary";
 import type { ConversationSummary } from "@/components/dashboard/workspace-presenters";
 import { Query } from "node-appwrite";
@@ -29,8 +30,6 @@ async function overviewWorkflows(workspaceId: string) {
   }
   return { rows, partial: true };
 }
-const reviewStatuses = ["pending_approval", "needs_review", "duplicate_review", "reconciliation_required", "send_reconciliation_required", "payout_reconciliation_required"];
-
 function invoiceTrend(rows: Record<string, unknown>[]) {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -49,10 +48,10 @@ export async function operationalOverview(workspaceId: string): Promise<Overview
   const db = dataDatabase(), scoped = [Query.equal("workspaceId", workspaceId)];
   const count = async (table: string, queries: string[] = []) => (await db.listRows({ ...params(table), queries: [...scoped, ...queries, Query.limit(1)] })).total;
   const [messageCount, draftCount, pendingCount, reviewCount, failedCount, endpoint, activity, review, messages, workspace, invoices, memory] = await Promise.all([
-    count("mail_messages", [Query.equal("financial", true)]), count("financial_workflows", [Query.equal("status", "draft_created")]), count("financial_workflows", [Query.equal("status", "pending_approval")]), count("financial_workflows", [Query.equal("status", reviewStatuses)]), count("automation_jobs", [Query.equal("status", "failed")]),
+    count("mail_messages", [Query.equal("financial", true)]), count("financial_workflows", [Query.equal("status", "draft_created")]), count("financial_workflows", [Query.equal("status", "pending_approval")]), count("financial_workflows", [Query.equal("status", workflowReviewStatuses)]), count("automation_jobs", [Query.equal("status", "failed")]),
     optionalRow("inbound_endpoints", inboxId(workspaceId)),
     db.listRows({ ...params("audit_events"), queries: [...scoped, Query.orderDesc("occurredAt"), Query.limit(5)] }),
-    db.listRows({ ...params("financial_workflows"), queries: [...scoped, Query.equal("status", reviewStatuses), Query.orderDesc("$updatedAt"), Query.limit(5)] }),
+    db.listRows({ ...params("financial_workflows"), queries: [...scoped, Query.equal("status", workflowReviewStatuses), Query.orderDesc("$updatedAt"), Query.limit(5)] }),
     db.listRows({ ...params("mail_messages"), queries: [...scoped, Query.equal("financial", true), Query.orderDesc("receivedAt"), Query.limit(3)] }),
     optionalRow("workspaces", workspaceId),
     overviewWorkflows(workspaceId),

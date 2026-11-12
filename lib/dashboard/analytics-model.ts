@@ -7,6 +7,15 @@ export const analyticsColumns = [
   "amount",
   "updatedAt",
 ] as const;
+export const workflowReviewStatuses = [
+  "pending_approval",
+  "needs_review",
+  "duplicate_review",
+  "reconciliation_required",
+  "send_reconciliation_required",
+  "payout_reconciliation_required",
+];
+
 export type AnalyticsRow = {
   id: string;
   counterparty: string;

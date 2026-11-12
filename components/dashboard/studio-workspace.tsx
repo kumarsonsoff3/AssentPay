@@ -7,12 +7,12 @@ import {
   type AgAiHarnessSetup, type AgDataSourcesDefinition, type AgReportState, type AgStudioApi,
 } from "ag-studio";
 import { studioAdapter } from "@/lib/dashboard/studio-adapter";
-import type { AnalyticsData, AnalyticsRow } from "@/lib/dashboard/analytics-model";
+import { workflowReviewStatuses, type AnalyticsData, type AnalyticsRow } from "@/lib/dashboard/analytics-model";
 
 import styles from "./studio-workspace.module.css";
 
 const field = (name: keyof AnalyticsRow) => ({ id: `financial_workflows.${name}` });
-const reviewStatuses = new Set(["needs_review", "pending_approval", "duplicate_review"]);
+const reviewStatuses = new Set(workflowReviewStatuses);
 const initialState: AgReportState = {
   pages: [{
     id: "workspace",
@@ -92,7 +92,7 @@ export function StudioWorkspace({ workspaceId, userId, rows, summary, aiAvailabl
         { id: "amount", name: "Reported or approved amount", format: "textFormat", description: "Display value for the grid. It may be a proposal, and must not be summed." },
         { id: "updatedAt", name: "Last updated (UTC)", format: "dateTimeFormat", description: "Timestamp of the last workflow update. Use for activity trends." },
         { id: "updatedDay", name: "Update date (UTC)", format: "textFormat", description: "Calendar date of the latest update. Use for daily workflow counts." },
-        { id: "reviewCount", name: "Needs review or approval", format: "integerFormat", description: "Sum to count workflows currently in the review queue." },
+        { id: "reviewCount", name: "In review queue", format: "integerFormat", description: "1 for workflows needing terms review, approval, duplicate review, or PayPal reconciliation. Filter to 1 for the review queue or sum to count its workflows." },
       ],
       data: rows.map(row => {
         const updatedAt = Number.isFinite(Date.parse(row.updatedAt)) ? new Date(row.updatedAt) : null;
@@ -128,13 +128,14 @@ export function StudioWorkspace({ workspaceId, userId, rows, summary, aiAvailabl
         id: "finance", name: "AssentPay Studio", adapter, maxTurns: 12,
         instructions: () => [
           "Build or edit the active dashboard when the user asks for a view. Answer questions with an aggregate query when data is needed. Use the existing chart or grid if it fits.",
-          "Inspect the schema for the exact field IDs and filter values, then add or configure widgets. Check the result and report what changed. For a status chart, count workflow IDs.",
+          "Inspect the schema for exact field IDs. Inspect the active page before editing it. When adding a widget, use the returned widget ID in the matching configure tool, then inspect it for configuration and layout issues before reporting success.",
+          "Use the review queue field with a value of 1 for a review table, including PayPal items that require reconciliation. For a status chart, count workflow IDs. Use human-readable labels for queries and widgets.",
           "Use financial_workflows for detailed records and counts. Use invoice_totals only for PayPal sandbox invoice face values by currency. Require a single currency for monetary comparisons or show each currency on its own row.",
           "Use the updated timestamp only for activity trends. Do not treat it as a payment or invoice issue date. Blank or unconfirmed amounts are unknown.",
           `The dashboard has ${rows.length} loaded workflows. ${summary.partial ? "Coverage is partial. State this when giving results." : "Use only the rows and verified totals available here."}`,
         ].join("\n"),
         tools: () => [
-          studio.viewSchema(), studio.viewPage(), studio.viewWidget(), studio.executeQuery(),
+          studio.viewSchema(), studio.viewReport(), studio.viewPage(), studio.viewWidget(), studio.executeQuery(),
           studio.addWidget(), studio.positionWidget(), studio.removeWidget(),
           studio.addPageFilter(), studio.removePageFilter(), studio.addWidgetFilter(), studio.removeWidgetFilter(),
           ...["grid", "column-chart-grouped", "line-chart", "value"].map(widgetType =>
@@ -143,7 +144,7 @@ export function StudioWorkspace({ workspaceId, userId, rows, summary, aiAvailabl
         ],
       })],
       promptStarters: [
-        { label: "Review queue", prompt: "Add a table of workflows that need review or approval. Include counterparty, status, reported amount, currency, and last updated." },
+        { label: "Review queue", prompt: "Add a table of workflows in the review queue, including those awaiting PayPal reconciliation. Include counterparty, status, reported amount, currency, and last updated." },
         { label: "Invoice totals", prompt: "Add a table showing the verified paid, open, and draft invoice face values by currency." },
         { label: "Workflow activity", prompt: "Add a chart of workflow counts by status." },
       ],
