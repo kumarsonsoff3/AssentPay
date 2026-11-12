@@ -395,7 +395,7 @@ function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: It
         <p>Invoice {sendReview.snapshot.providerId}. Reference {sendReview.snapshot.invoice.detail?.reference}. Issue date {sendReview.snapshot.invoice.detail?.invoice_date || "today"}. PayPal schedules delivery for a future issue date.</p>
         <p>This approval authorizes PayPal to email the invoice to the customer and merchant. The review expires at <time dateTime={sendReview.expiresAt}>{new Date(sendReview.expiresAt).toLocaleString()}</time>.</p>
         <button className={styles.workflowPrimary} disabled={busy}>Approve sending this exact sandbox invoice</button>
-        <button type="button" disabled={busy} onClick={() => void mutate("slack-identity", { action: "prepare-send", workflowId: item.id, snapshotHash: sendReview.snapshotHash })}>Send approval card to Slack</button>
+        <Link href={`/workspaces/${encodeURIComponent(workspaceId)}/slack-identity?workflowId=${encodeURIComponent(item.id)}`}>Prepare send approval in Slack</Link>
       </form>}
     </div>}
     {canApprove && ["send_reconciliation_required","send_approved"].includes(str(item,"status")) && <div><p>Send authorized or uncertain. Never resend. Verify the existing invoice using GET-only recovery.</p><button disabled={busy} onClick={()=>void mutate("workflows/"+item.id,{action:"recover_send"})}>Reconcile existing send (read only)</button></div>}

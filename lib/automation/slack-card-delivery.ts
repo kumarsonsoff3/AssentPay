@@ -212,7 +212,7 @@ export async function deliverSlackCard(job: Job, commit: GuardedCommit) {
     const payout = claim.operation === "pay_supplier";
     const send = claim.operation === "invoice_send";
     const label = send ? "Send sandbox invoice" : payout ? "Pay supplier in sandbox" : "Approve draft";
-    const consequence = send ? "Authorizes PayPal to send the verified sandbox invoice." : payout ? "Authorizes the exact PayPal sandbox supplier payout." : "Authorizes a sandbox draft only; no invoice send or funds movement.";
+    const consequence = send ? "Sends the verified PayPal sandbox invoice." : payout ? "Submits the exact PayPal sandbox supplier payout." : "Creates an unsent PayPal sandbox invoice draft.";
     text =
       claim.amount +
       ". " + (claim.operation ? consequence : "Manual review required.") + " Exact proposal " +
@@ -232,6 +232,7 @@ export async function deliverSlackCard(job: Job, commit: GuardedCommit) {
       ]),
       {
         type: "button",
+        action_id: "assentpay_open_review",
         text: { type: "plain_text", text: send ? "Review verified invoice" : "Review / change amount" },
         url,
       },
@@ -240,14 +241,10 @@ export async function deliverSlackCard(job: Job, commit: GuardedCommit) {
       elements.unshift({
         ...button(send || payout ? label : "Approve exact proposal", "assentpay_approve", payload.token),
         confirm: {
-          title: { type: "plain_text", text: "Approve this exact proposal?" },
+          title: { type: "plain_text", text: consequence },
           text: {
             type: "plain_text",
-            text:
-              claim.amount +
-              " to " +
-              claim.recipient +
-              ". " + consequence,
+            text: `${claim.amount} to ${claim.recipient}`,
           },
           confirm: { type: "plain_text", text: label },
           deny: { type: "plain_text", text: "Cancel" },

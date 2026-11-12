@@ -14,6 +14,7 @@ type Workflow = {
   status: string;
   action: string;
   sourceEmail: string | null;
+  sendReview: { snapshotHash: string; recipient: string; amount: string } | null;
 };
 
 export function SlackIdentity({ workspaceId, initiallyLinked, workflow }: {
@@ -31,6 +32,8 @@ export function SlackIdentity({ workspaceId, initiallyLinked, workflow }: {
   const canApprove = workflow?.status === "pending_approval" &&
     ["create_draft_invoice", "pay_supplier"].includes(workflow.action);
   const canReview = workflow && ["needs_review", "duplicate_review"].includes(workflow.status);
+  const sendReview = workflow?.sendReview;
+  const canPrepare = canApprove || canReview || !!sendReview;
   const reviewUrl = workflow
     ? `/workspaces/${encodeURIComponent(workspaceId)}/review/${encodeURIComponent(workflow.id)}`
     : "/dashboard/approvals";
@@ -62,9 +65,14 @@ export function SlackIdentity({ workspaceId, initiallyLinked, workflow }: {
   return <div className={styles.stack}>
     {workflow && <section className={styles.card} aria-labelledby="proposal-heading">
       <h2 id="proposal-heading">{workflow.counterparty || "Financial proposal"}</h2>
-      {canApprove ? <p><strong>{workflow.currency} {workflow.amount}</strong> · {workflow.action === "pay_supplier" ? "Supplier payout" : "Customer invoice draft"}</p> :
-        <p>{canReview ? "Confirm the PayPal terms in Approvals before an approval button can appear in Slack." : "Open the proposal to check its current status."}</p>}
-      <Link href={reviewUrl} className={!canApprove ? styles.primary : undefined}>Open proposal in Approvals</Link>
+      {sendReview ? <p className={styles.sendSummary}>Send a <strong>{sendReview.amount}</strong> PayPal sandbox invoice to <strong>{sendReview.recipient}</strong>.</p> :
+        canApprove ? <p><strong>{workflow.currency} {workflow.amount}</strong> · {workflow.action === "pay_supplier" ? "Supplier payout" : "Customer invoice draft"}</p> :
+          <p>{canReview ? "Confirm the PayPal terms in Approvals before preparing an approval card." : workflow.status === "draft_created" ? "Verify the unsent draft in Approvals to prepare a send card." : "Open the proposal to check its current status."}</p>}
+      {sendReview && workflow.sourceEmail && workflow.sourceEmail.toLowerCase() !== sendReview.recipient.toLowerCase() &&
+        <InlineFeedback tone="error">The source quotes {workflow.sourceEmail}. Verify the draft recipient before sending.</InlineFeedback>}
+      <Link href={reviewUrl} className={!canPrepare ? styles.primary : undefined}>Open proposal in Approvals</Link>
+      {canPrepare && !linked && <a href="#slack-account-heading">Link Slack to receive {canReview ? "review" : "approval"} cards</a>}
+      {sendReview && linked && <button className={styles.primary} disabled={busy} onClick={() => void submit({ action: "prepare-send", workflowId: workflow.id, snapshotHash: sendReview.snapshotHash })}>Send invoice approval to my Slack</button>}
       {linked && (canApprove || canReview) && <form className={styles.form} onSubmit={event => {
         event.preventDefault();
         void submit({ action: "prepare", workflowId: workflow.id, proposalHash: workflow.hash, ...(canApprove ? { recipientEmail } : {}) });

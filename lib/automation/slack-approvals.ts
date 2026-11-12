@@ -118,11 +118,9 @@ export async function activeSlackIdentity(
   owner: string,
 ) {
   await authorize(workspace, owner);
-  const row = await db.getRow(
-    params("slack_identities", identityId(workspace, owner), tx),
-  );
+  const row = await optionalRow("slack_identities", identityId(workspace, owner), db, tx);
   if (
-    row.workspaceId !== workspace ||
+    !row || row.workspaceId !== workspace ||
     row.ownerId !== owner ||
     row.status !== "active"
   )

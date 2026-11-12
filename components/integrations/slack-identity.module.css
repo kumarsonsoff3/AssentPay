@@ -13,3 +13,4 @@
 .card button:disabled { opacity: .55; }
 .status { font-size: .875rem; font-weight: 600; }
 .sourceEmail { display: grid; justify-items: start; gap: .4rem; overflow-wrap: anywhere; }
+.sendSummary { overflow-wrap: anywhere; }
