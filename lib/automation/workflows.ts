@@ -204,6 +204,7 @@ export async function executeFinancialAction(job: Job, commit: GuardedCommit) {
     await commit(async (db, tx) => {
       await db.updateRow({ ...params("financial_actions", actionId, tx), data: { status: "completed", providerId: id } });
       await db.updateRow({ ...params("financial_workflows", workflowId, tx), data: { status: "draft_created", providerId: id } });
+      await enqueueSlackWorkflowUpdate(db, tx, job.workspaceId, workflowId, job.requestedBy, "draft");
       await notify(db, tx, job.workspaceId, `${workflowId}:draft`, "PayPal draft created", "The approved sandbox invoice is a draft. It has not been sent and no payment has been made.", "financial");
       await audit(db, tx, job.workspaceId, job.requestedBy, "paypal.draft_created", workflowId, actionId);
     });
@@ -498,6 +499,9 @@ export async function verifyAndBindPaypal(job: Job, commit: GuardedCommit) {
     await db.updateRow({ ...params("financial_actions", id, tx), data: { status: "completed", providerId } });
     await db.updateRow({ ...params("financial_workflows", workflowId, tx), data: { status, providerId } });
     await audit(db, tx, job.workspaceId, job.requestedBy, "paypal.recovery_verified", workflowId, id);
+    if (status === "draft_created" && workflow.action === "create_draft_invoice")
+      await enqueueSlackWorkflowUpdate(db, tx, job.workspaceId, workflowId, job.requestedBy, "draft");
+    await saveInvoicePaymentLink(db, tx, job.workspaceId, workflowId, job.requestedBy, invoice, status);
     await notify(db, tx, job.workspaceId, stableId(workflowId, "recovered"), "Existing PayPal invoice verified", "The existing sandbox invoice was verified against the original approval. No replacement invoice was created.", "financial");
   });
 }

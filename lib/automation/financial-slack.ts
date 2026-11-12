@@ -260,17 +260,22 @@ function financialReviewMessage(
     ],
   };
 }
-function paymentMessage(reviewUrl: string) {
+function invoiceMessage(reviewUrl: string, phase: "draft" | "payment", currency: unknown, amount: unknown) {
   const url = new URL(reviewUrl);
-  url.searchParams.set("open", "paypal");
-  const heading = "PayPal sandbox invoice available";
+  const draft = phase === "draft";
+  if (!draft) url.searchParams.set("open", "paypal");
+  const heading = draft ? "PayPal sandbox draft ready" : "PayPal sandbox invoice available";
+  const button = draft ? "Review draft for sending" : "Open PayPal invoice";
+  const total = isCurrencyCode(currency) && typeof amount === "string" && /^\d{1,12}(?:\.\d{1,2})?$/.test(amount)
+    ? `Invoice total ${currency} ${amount}. ` : "";
+  const detail = total + (draft ? "Review the draft and approve sending when ready." : "Open the invoice on PayPal with your AssentPay owner account.");
   return {
-    text: `${heading}\n<${url.href}|Open PayPal invoice>`,
+    text: `${heading}\n${detail}\n<${url.href}|${button}>`,
     blocks: [
       { type: "header", text: { type: "plain_text", text: heading } },
-      { type: "section", text: { type: "mrkdwn", text: "Open the invoice on PayPal with your AssentPay owner account." } },
+      { type: "section", text: { type: "plain_text", text: detail } },
       { type: "actions", elements: [
-        { type: "button", action_id: "assentpay_open_paypal", text: { type: "plain_text", text: "Open PayPal invoice" }, url: url.href },
+        { type: "button", action_id: draft ? "assentpay_open_review" : "assentpay_open_paypal", text: { type: "plain_text", text: button }, url: url.href },
       ] },
     ],
   };
@@ -281,10 +286,13 @@ export async function deliverFinancialSlack(job: Job, commit: GuardedCommit) {
     workflow = await optionalRow("financial_workflows", workflowId);
   if (!workflow || workflow.workspaceId !== job.workspaceId)
     throw new InputError("Workflow unavailable.", 404);
-  const eligible = (status: string) => phase === "payment"
-    ? invoiceCanBePaid(status)
-    : phase === "approval" ? status === "pending_approval" : ["pending_approval", "needs_review", "duplicate_review"].includes(status);
-  if (!eligible(workflow.status)) return;
+  const eligible = (status: string, action: string) => {
+    if (phase === "payment") return invoiceCanBePaid(status);
+    if (phase === "draft") return status === "draft_created" && action === "create_draft_invoice";
+    if (phase === "approval") return status === "pending_approval";
+    return ["pending_approval", "needs_review", "duplicate_review"].includes(status);
+  };
+  if (!eligible(workflow.status, workflow.action)) return;
   const authorize = workerAuthorization(dataClient(), job.requestedBy),
     store = new RuntimeStore(
       dataDatabase(),
@@ -412,7 +420,7 @@ export async function deliverFinancialSlack(job: Job, commit: GuardedCommit) {
       );
       if (
         current.workspaceId !== job.workspaceId ||
-        !eligible(current.status)
+        !eligible(current.status, current.action)
       )
         return false;
       const prior = await optionalRow(
@@ -423,7 +431,7 @@ export async function deliverFinancialSlack(job: Job, commit: GuardedCommit) {
       );
       if (prior && !["retry", "failed"].includes(prior.status)) return false;
       if (phase === "payment" && !await storedInvoicePaymentLink(job.workspaceId, workflowId, current.providerId, current.status, db, tx)) return false;
-      const message = phase === "payment" ? paymentMessage(url) : financialReviewMessage(
+      const message = phase === "draft" || phase === "payment" ? invoiceMessage(url, phase, current.currency, current.amount) : financialReviewMessage(
         {
           status: current.status,
           action: current.action,

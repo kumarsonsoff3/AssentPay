@@ -38,7 +38,7 @@ export async function storedInvoicePaymentLink(
 
 export async function enqueueSlackWorkflowUpdate(
   db: TablesDB, tx: string, workspaceId: string, workflowId: string,
-  requestedBy: string, phase: "approval" | "payment",
+  requestedBy: string, phase: "approval" | "draft" | "payment",
 ) {
   const integrationId = connectionId(workspaceId, "slack");
   const slack = await optionalRow("integrations", integrationId, db, tx);
