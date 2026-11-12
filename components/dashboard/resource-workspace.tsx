@@ -124,21 +124,22 @@ export function ResourceWorkspace({ section }: { section: ResourceSection }) {
               </button>
             ))}
           </div>
-          <label className={styles.search}>
+          <div className={styles.recordsSearch}>
             <Search size={16} />
-            <span className="sr-only">Search {section}</span>
             <input
+              aria-label={`Search ${section}`}
+              className={styles.recordsSearchInput}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={`Search ${section}…`}
               type="search"
             />
             {query && (
-              <button aria-label="Clear search" onClick={() => setQuery("")}>
+              <button type="button" className={styles.clearSearch} aria-label="Clear search" onClick={() => setQuery("")}>
                 <X size={14} />
               </button>
             )}
-          </label>
+          </div>
         </div>
         <div className={styles.resultsMeta}>
           <span>

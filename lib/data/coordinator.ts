@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 import { Query, type TablesDB } from "node-appwrite";
 import { dataDatabase, databaseId } from "./client";
+import { isTransactionConflict } from "../errors";
 
 export const STORAGE_PROTOCOL = "storage-v1";
 export const CONTROL_ID = "runtime_storage";
@@ -40,6 +42,20 @@ const local = new AsyncLocalStorage<StorageOperation>();
 const processId = nonce();
 const expiry = () => new Date(Date.now() + 180000).toISOString();
 type JournalRow = Record<string, unknown>;
+
+async function retryTransaction<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      // Appwrite rejected the transaction and transaction() has rolled it back.
+      // A transport failure can mean the commit succeeded, so never retry it here.
+      if (attempt === 2 || !isTransactionConflict(error)) throw error;
+      await setTimeout(150 * 2 ** attempt + Math.random() * 150);
+    }
+  }
+}
+
 export function decodeControl(row: JournalRow): StorageState {
   let details;
   try {
@@ -120,7 +136,7 @@ export class StorageCoordinator {
     try { return await this.db.getRow(this.params(CLEANUP_ID, transactionId)); }
     catch (error) { if (rowMissing(error)) return null; throw error; }
   }
-  async begin(kind: OperationKind) {
+  async begin(kind: OperationKind, retryConflicts = kind === "worker") {
     const id = `l_${nonce()}`;
     const state = await this.transaction(async (tx) => {
       let current = await this.state(tx);
@@ -164,7 +180,7 @@ export class StorageCoordinator {
       });
       return current;
     });
-    return new StorageOperation(this, id, state, kind);
+    return new StorageOperation(this, id, state, kind, retryConflicts);
   }
   async leases(transactionId?: string) {
     const rows = [];
@@ -194,6 +210,7 @@ export class StorageOperation {
     readonly id: string,
     readonly state: StorageState,
     readonly kind: OperationKind,
+    private readonly retryConflicts = kind === "worker",
   ) {}
   get storage() {
     return this.state.storage;
@@ -230,14 +247,16 @@ export class StorageOperation {
   commit<T>(
     run: (db: TablesDB, transactionId: string) => Promise<T>,
   ): Promise<T> {
-    return this.serial(() =>
-      this.coordinator.transaction(async (tx) => {
+    return this.serial(() => {
+      // Callers that enable retries keep provider writes outside the transaction.
+      const commit = () => this.coordinator.transaction(async (tx) => {
         await this.validate(tx);
         const result = await run(this.coordinator.db, tx);
         await this.validate(tx);
         return result;
-      }),
-    );
+      });
+      return this.retryConflicts ? retryTransaction(commit) : commit();
+    });
   }
   async check() {
     await this.commit(async () => {});
@@ -284,10 +303,12 @@ export async function storageState() {
 export async function withStorageOperation<T>(
   kind: OperationKind,
   run: (op: StorageOperation) => Promise<T>,
+  { retryConflicts = kind === "worker" } = {},
 ) {
   const existing = local.getStore();
   if (existing) return run(existing);
-  const op = await coordinator().begin(kind);
+  const begin = () => coordinator().begin(kind, retryConflicts);
+  const op = await (retryConflicts ? retryTransaction(begin) : begin());
   op.startHeartbeat();
   try {
     return await local.run(op, () => run(op));

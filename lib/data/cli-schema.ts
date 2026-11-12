@@ -1,7 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { AppwriteException, type TablesDB, type Storage } from "node-appwrite";
+import { AppwriteException, Client, TablesDB, type Storage } from "node-appwrite";
+
+// CLI stringArray flags cannot safely represent an explicitly empty ACL.
+// Journal writes use the existing server key so [] reaches the SDK unchanged.
+export function journalServerClient(project: string, endpoint: string): TablesDB | null {
+  const key = process.env.APPWRITE_SCHEMA_API_KEY || process.env.APPWRITE_DATA_API_KEY || process.env.APPWRITE_API_KEY;
+  return key ? new TablesDB(new Client().setEndpoint(endpoint).setProject(project).setKey(key)) : null;
+}
+export function requiresExactJournalTransport(method: string, params: Record<string, unknown>): boolean {
+  return method.endsWith("Row") && params.tableId === "schema_migrations" &&
+    Array.isArray(params.permissions) && params.permissions.length === 0;
+}
 /** Optional operator transport. Uses the authenticated CLI without extracting its
  * credentials. Restricted to schema and migration-journal commands. */
 export function cliSchemaClient(project: string, endpoint: string): TablesDB {
@@ -51,6 +62,15 @@ function cliOperatorClient(
             throw new Error(
               "CLI transport can only mutate the migration journal, never domain records.",
             );
+          if (requiresExactJournalTransport(method, params)) {
+            const server = journalServerClient(project, endpoint);
+            if (!server) throw new Error("Explicit empty journal permissions require an existing server API key; CLI omission is unsafe.");
+            const input = { databaseId: String(params.databaseId), tableId: String(params.tableId), rowId: String(params.rowId), permissions: [] as string[], transactionId: params.transactionId as string | undefined, data: params.data as Record<string, unknown> };
+            if (method === "createRow") return server.createRow(input);
+            if (method === "upsertRow") return server.upsertRow(input);
+            if (method === "updateRow") return server.updateRow(input);
+            throw new Error("Empty journal ACL supplied to a non-mutating operation.");
+          }
           const args = [
             service,
             method.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`),

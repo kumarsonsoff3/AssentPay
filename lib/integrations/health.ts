@@ -42,7 +42,12 @@ export function workerAuthorization(client: Client, requestedBy: string) {
         Query.limit(1),
       ],
     });
-    assertWorkspaceMembership(result.memberships[0], workspaceId, requestedBy, roles);
+    assertWorkspaceMembership(
+      result.memberships[0],
+      workspaceId,
+      requestedBy,
+      roles,
+    );
   };
 }
 export async function runConnectionCheck(payload: ConnectionCheck) {
@@ -57,7 +62,7 @@ export async function runConnectionCheck(payload: ConnectionCheck) {
   if (state.mode === "frozen" || state.mode === "draining")
     return { status: "storage_paused" };
   try {
-    return await withStorageOperation("worker", async (op) => {
+    return await withStorageOperation("worker", async op => {
       if (op.state.epoch !== payload.storageEpoch)
         return { status: "superseded" };
       const authorize = workerAuthorization(dataClient(), payload.requestedBy);

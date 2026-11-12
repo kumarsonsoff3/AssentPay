@@ -73,7 +73,7 @@ export function WorkspaceShell({
             <AccountMenu name={name} email={email} role={workspace?.role} />
           </div>
         </header>
-        {workspaceId ? <MobileDashboardNavigation {...navigationProps} /> : <AccountNavigation mobile settings={active === "account"} />}
+        {workspaceId ? <MobileDashboardNavigation {...navigationProps} pageTitle={pageTitle} /> : <AccountNavigation mobile settings={active === "account"} />}
         <main id="workspace-main">{children}</main>
       </div>
     </div>

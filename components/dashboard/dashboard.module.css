@@ -799,27 +799,11 @@
   background: #edf3ff;
   font-weight: 550;
 }
-.search {
-  display: flex;
-  align-items: center;
-  border: 1px solid #e0e8f3;
-  border-radius: 8px;
-  padding: 0 10px;
-  gap: 8px;
-  color: #7d8faa;
-}
-.search input {
-  border: 0 !important;
-  background: transparent !important;
-  padding: 10px 0 !important;
-  min-height: 38px !important;
-  font-size: 11px !important;
-  max-width: 210px;
-}
-.search button {
+.clearSearch {
   display: grid;
   place-items: center;
   width: 28px;
+  flex: none;
   min-height: 30px;
 }
 .resultsMeta {
@@ -1029,13 +1013,7 @@
   .tabs button {
     min-height: 44px;
   }
-  .search {
-    width: 100%;
-  }
-  .search input {
-    max-width: none;
-    flex: 1;
-  }
+  .resourceToolbar .recordsSearch { width: 100%; }
   .page button,
   .page a {
     touch-action: manipulation;
@@ -1120,3 +1098,282 @@
   .overviewGrid .compact { min-height:140px; padding:20px; }
   .overviewCash .chartEmpty { min-height:195px; padding:16px; }
 }
+
+/* Financial review controls */
+.workflowReview { max-width:620px; min-width:0; line-height:1.8; overflow-wrap:anywhere; }
+.workflowReview > p { margin:8px 0; }
+.workflowReview form { margin:14px 0; padding:14px; border:1px solid #dce5f5; border-radius:10px; background:#fafcff; }
+.workflowReview label { display:grid; gap:6px; font-weight:550; }
+.workflowReview input { width:100%; min-width:0; }
+.workflowReview button { min-height:44px; margin:8px 8px 0 0; }
+.workflowReview summary { min-height:44px; display:list-item; align-content:center; cursor:pointer; color:#315bca; }
+.workflowReview a { display:inline-block; min-height:44px; align-content:center; color:#315bca; text-decoration:underline; text-underline-offset:3px; }
+.reviewNextStep { padding:10px 12px; background:#f1f5ff; border-left:3px solid #6080de; border-radius:4px; color:#3c5277; }
+.tableWrap:focus-visible { outline:2px solid #315efb; outline-offset:-2px; }
+.mobileChevron { margin-left:auto; }
+.mobileMenu[open] > summary .mobileChevron { transform:rotate(180deg); }
+.mobileMenu > summary:focus-visible { outline:2px solid #315efb; outline-offset:-2px; }
+@media(max-width:700px) {
+ .mobileMenu[open] { max-height:75dvh; overflow-y:auto; overscroll-behavior:contain; }
+}
+
+/* Workspace submenu surfaces */
+.sectionPage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 24px;
+  max-width: 1440px;
+  padding: clamp(18px, 3vw, 40px) clamp(16px, 3vw, 42px) 56px;
+}
+.sectionPage > .panel, .sectionPage > .agentStatus { margin: 0; }
+.sectionPage .panel { border-radius: 20px; }
+.sectionPage .panelHeading h2 { font-size: 17px; font-weight: 680; }
+.sectionPage .tableWrap th { font-size: 12px; }
+.sectionPage .tableWrap td { font-size: 13px; }
+
+.recordsPanel {
+  min-width: 0;
+  padding: clamp(16px, 2.4vw, 28px);
+  border: 1px solid #e1e8f2;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 2px 8px #152b4d06;
+}
+.recordsHeading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.recordsHeading h2 { margin: 0; color: #172a49; font-size: 19px; line-height: 1.3; font-weight: 690; letter-spacing: -.025em; }
+.recordsHeading p, .recordsHint { color: #52627c; font-size: 13px; line-height: 1.6; }
+.recordsHeading p { margin: 5px 0 0; }
+.recordsHint { margin: 12px 0 0; }
+.sandboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 6px 9px;
+  border-radius: 9px;
+  color: #285494;
+  background: #edf4ff;
+  font-size: 11px;
+  font-weight: 680;
+}
+.recordsToolbar { display: grid; gap: 10px; margin: 20px 0 18px; }
+.recordsSearch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 410px;
+  min-width: 0;
+  padding: 0 12px;
+  border: 1px solid #d9e2ef;
+  border-radius: 11px;
+  color: #52627c;
+  background: #f8fafd;
+}
+.recordsSearch:focus-within { outline: 2px solid #315efb; outline-offset: 2px; }
+.recordsSearch > svg { flex: none; }
+.recordsSearch > input.recordsSearchInput[type="search"] {
+  min-width: 0;
+  width: 100%;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  color: #142749;
+  font: inherit;
+  font-size: 14px;
+}
+.recordsSearch input::placeholder { color: #52627c; }
+.recordFilters { display: flex; flex-wrap: wrap; gap: 8px; }
+.recordFilters button {
+  min-height: 44px;
+  padding: 7px 12px;
+  border: 1px solid #e2e8f2;
+  border-radius: 9px;
+  background: #fff;
+  color: #425574;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.recordFilters button:hover { border-color: #aebfdf; background: #f6f8fe; }
+.recordFilters button[aria-pressed="true"] { border-color: #cad7fe; color: #2246b5; background: #ebf0ff; font-weight: 680; }
+.recordFilters button:focus-visible, .workflowSummary:focus-visible, .recordsPanel :is(button, a, input):focus-visible {
+  outline: 2px solid #315efb;
+  outline-offset: 2px;
+}
+.recordsList { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.recordRow, .workflowCard { min-width: 0; border: 1px solid #e2e9f3; border-radius: 14px; background: #fff; }
+.recordRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+}
+.recordIcon { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 11px; color: #3358b6; background: #edf2ff; }
+.recordMain { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
+.recordMain > strong { color: #142749; font-size: 14px; font-weight: 670; line-height: 1.4; }
+.recordMain > span { color: #52627c; font-size: 13px; line-height: 1.55; }
+.recordMain details { font-size: 13px; line-height: 1.65; }
+.recordMain summary { min-height: 44px; align-content: center; color: #2548a6; cursor: pointer; }
+.recordAside { display: grid; justify-items: end; gap: 5px; min-width: 0; }
+.recordDate { color: #52627c; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.recordStatus {
+  justify-self: start;
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 7px;
+  color: #47566f;
+  background: #edf1f7;
+  font-size: 11px;
+  font-weight: 680;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-transform: capitalize;
+}
+.recordAside .recordStatus { justify-self: end; }
+.recordStatus[data-tone="attention"] { color: #714a15; background: #fff1d9; }
+.recordStatus[data-tone="good"] { color: #17634a; background: #e3f6ed; }
+.recordStatus[data-tone="progress"] { color: #2548a6; background: #edf2ff; }
+.workflowSummary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto) minmax(106px, auto) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 70px;
+  padding: 14px;
+  border-radius: 13px;
+  list-style: none;
+  cursor: pointer;
+}
+.workflowSummary::-webkit-details-marker { display: none; }
+.workflowSummary:hover, .workflowCard details[open] > .workflowSummary { background: #f7f9ff; }
+.workflowCard details[open] > .workflowSummary { border-radius: 13px 13px 0 0; }
+.recordAmount { color: #142749; font-size: 14px; font-weight: 680; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.recordChevron { color: #52627c; }
+.workflowCard details[open] > .workflowSummary .recordChevron { transform: rotate(180deg); }
+.workflowDetails { min-width: 0; padding: 16px clamp(14px, 3vw, 30px) 22px; border-top: 1px solid #e2e9f3; }
+.operationLabel { font-size: 13px; font-weight: 680; text-transform: capitalize; }
+.workflowDetails .workflowReview { max-width: 760px; font-size: 13px; }
+.workflowDetails input { min-height: 44px; padding: 8px 12px; border: 1px solid #cad7eb; border-radius: 9px; background: #fff; }
+.workflowDetails form { border-radius: 12px; }
+.workflowDetails :is(form button, .decisionPanel > div > button) { padding-inline: 12px; border: 1px solid #ccd8ec; border-radius: 9px; background: #fff; color: #22469b; cursor: pointer; }
+.workflowDetails form button:hover, .workflowDetails .decisionPanel > div > button:hover { background: #eff4ff; }
+.workflowDetails .workflowReview button:disabled { opacity: .55; cursor: not-allowed; }
+.recordsEmpty { padding: 18px; border: 1px dashed #d4e0f0; border-radius: 14px; background: #fafcff; text-align: center; }
+.recordsEmpty .secondary { margin-top: 10px; }
+.recordFeedback { margin-bottom: 12px; }
+.recordsFooter { display: flex; justify-content: center; margin-top: 16px; }
+.recordsPanel .secondary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; white-space: normal; text-align: center; }
+@media (max-width: 690px) {
+  .sectionPage { gap: 16px; }
+  .recordRow { grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
+  .recordAside { grid-column: 2; justify-items: start; }
+  .recordAside .recordStatus { justify-self: start; }
+  .recordRow > .secondary { grid-column: 2; justify-self: start; }
+  .workflowSummary { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 10px; }
+  .workflowSummary .recordStatus { grid-row: 2; grid-column: 2; }
+  .recordAmount { grid-row: 2; grid-column: 3; }
+  .recordChevron { grid-row: 1; grid-column: 3; justify-self: end; }
+}
+@media (max-width: 380px) {
+  .recordsHeading { flex-wrap: wrap; }
+  .workflowSummary { padding: 10px; }
+  .recordIcon { width: 34px; height: 34px; }
+}
+
+.workflowDetails form .workflowPrimary { border-color: #254ac6; background: #254ac6; color: #fff; font-weight: 650; }
+.workflowDetails form .workflowPrimary:hover:not(:disabled) { border-color: #17369f; background: #17369f; }
+.navigation :is(a, button) { color: #485d7b; font-size: 12px; }
+.navigation :is(a, button)[aria-current] {
+  border-radius: 9px;
+  background: #ebf1ff;
+  color: #2246b5;
+  box-shadow: inset 3px 0 #315efb;
+}
+.navigation p { color: #52627c; font-size: 10px; font-weight: 650; }
+.mobileMenu > summary > span { display: grid; gap: 2px; }
+.mobileMenu > summary > span strong { color: #142749; font-size: 12px; font-weight: 680; }
+@media (max-width: 700px) {
+  .navigation :is(a, button) { min-height: 44px; }
+}
+
+.teamTable { min-width: 560px; }
+.teamTable td :is(select, button) { min-height: 44px; }
+.teamTable td:first-child { overflow-wrap: anywhere; }
+.teamTable tbody tr:nth-child(even) { background: #fafcff; }
+
+.workflowDetails { container-type:inline-size; }
+.workflowDetails .workflowReview { max-width:none; line-height:1.55; }
+.reviewGuide { display:flex; align-items:flex-start; gap:10px; padding:12px; margin-bottom:12px; border:1px solid #dfe8fa; border-radius:11px; background:#f1f5ff; color:#344e85; }
+.reviewGuide > svg { flex:none; margin-top:2px; }
+.reviewGuide p { margin:0; }
+.reviewGuide .reviewNextStep { padding:0; border:0; background:transparent; margin:3px 0 0; color:#43597b; }
+.reviewGuide .providerReference { margin-top:4px; color:#43597b; }
+.reviewColumns { display:grid; gap:12px; align-items:start; }
+@container (min-width: 670px) {
+  .reviewColumns { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1fr); }
+}
+.evidencePanel, .decisionPanel { min-width:0; padding:14px; border:1px solid #dfe7f3; border-radius:11px; color:#43597b; background:#fff; }
+.decisionPanel { background:#f8faff; }
+.evidencePanel h3, .decisionPanel h3 { margin:0 0 8px; font-size:14px; color:#172a49; }
+.evidenceContent p { margin:6px 0; }
+.evidenceContent .evidencePurpose { color:#253650; font-weight:650; }
+.evidenceFacts { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin:10px 0; padding:9px; border-radius:8px; background:#f4f7fc; }
+.evidenceFacts dt { font-size:11px; font-weight:650; }
+.evidenceFacts dd { margin:2px 0 0; color:#253650; }
+.workflowReview :is(.evidenceDetails, .reviseAmount) { padding:0 8px; border:1px solid #e3ebf8; border-radius:8px; background:#f7faff; }
+.workflowReview :is(.evidenceDetails, .reviseAmount) summary { display:flex; align-items:center; gap:7px; padding:5px 0; min-height:40px; font-weight:650; list-style:none; }
+.workflowReview :is(.evidenceDetails, .reviseAmount) summary::-webkit-details-marker { display:none; }
+.workflowReview :is(.evidenceDetails, .reviseAmount) summary svg:last-child { margin-inline-start:auto; }
+.workflowReview :is(.evidenceDetails, .reviseAmount)[open] summary svg:last-child { transform:rotate(180deg); }
+.evidenceQuote { margin:8px 0; padding:8px 10px; border-inline-start:2px solid #9aadf0; border-radius:3px; background:#fff; white-space:pre-wrap; }
+.evidenceQuote footer { margin-top:6px; color:#536682; }
+.workflowReview .evidenceSource, .workflowReview .decisionActions a { display:inline-flex; align-items:center; gap:5px; font-weight:650; }
+.workflowReview .evidenceSource { margin-top:4px; }
+.workflowDetails .decisionPanel form { margin:8px 0; padding:10px; background:#fff; }
+.workflowDetails .reviseAmount form { padding:0; border:0; background:transparent; }
+.workflowDetails .decisionPanel form p { margin:7px 0; }
+.workflowDetails .decisionPanel button { margin:0; }
+.workflowDetails .decisionPanel form button { margin-top:4px; }
+.decisionActions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:4px 10px; margin-top:5px; }
+.rejectDecision { border:1px solid #eed5d6; border-radius:8px; padding:0 10px; background:#fff; color:#a03438; font:inherit; font-weight:650; cursor:pointer; }
+.rejectDecision:hover:not(:disabled) { background:#fff0ef; }
+.workflowDetails :is(a, button, summary, input):focus-visible { outline:2px solid #3453ce; outline-offset:2px; }
+
+.resourceLoading { display:grid; gap:10px; padding:16px; border:1px solid #dce5f3; border-radius:14px; background:#fff; color:#455b7c; font-size:13px; }
+.resourceLoading div { height:13px; border-radius:7px; background:#eef2f9; }
+.resourceLoading div:nth-child(2) { width:62%; }
+.resourceLoading div:nth-child(3) { width:86%; }
+.resourceLoading div:nth-child(4) { width:47%; }
+
+.mobileCellLabel { display:none; }
+.memberRole { text-transform:capitalize; }
+.sectionPage { gap:16px; }
+.sectionPage .inviteForm { grid-template-columns:minmax(0, 1fr) minmax(130px, 180px) auto; gap:12px; align-items:end; }
+.sectionPage .inviteForm button { min-height:44px; }
+@media (max-width:700px) {
+  .sectionPage .inviteForm { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
+  .sectionPage .inviteForm > label:first-child { grid-column:1 / -1; }
+  .teamTable { min-width:0; display:block; }
+  .teamTable thead { position:absolute; inline-size:1px; block-size:1px; overflow:hidden; clip-path:inset(50%); }
+  .teamTable tbody { display:grid; }
+  .teamTable tbody tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:10px 14px; gap:7px 12px; }
+  .teamTable tbody tr + tr { border-top:1px solid #e1e8f4; }
+  .teamTable tbody td { display:block; border:0; padding:0; min-width:0; white-space:normal; }
+  .teamTable tbody td:first-child, .teamTable tbody td:last-child { grid-column:1 / -1; }
+  .mobileCellLabel { display:block; color:#455b7c; font-size:11px; margin-bottom:4px; }
+}
+@media (max-width:520px) {
+  .sectionPage .inviteForm { grid-template-columns:minmax(0,1fr); }
+  .sectionPage .panel:has(.teamTable) .panelHeading { flex-wrap:wrap; gap:4px 10px; }
+}
+
+.activityPanel .panelHeading { flex-wrap:wrap; gap:10px; }
+.activityPanel .panelHeading p { margin:4px 0 0; font-size:12px; color:#455b7c; }
+.activityPanel .recordsSearch { flex:0 1 280px; max-width:100%; }
+@media (max-width:600px) { .activityPanel .recordsSearch { flex-basis:100%; } }

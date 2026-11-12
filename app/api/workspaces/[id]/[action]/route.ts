@@ -146,7 +146,7 @@ export async function POST(
       return json({
         message: action === "role" ? "Role updated." : "Membership removed.",
       });
-    });
+    }, { retryConflicts: ["rename", "profile", "complete"].includes(action) });
   } catch (error) {
     return apiError(error);
   }

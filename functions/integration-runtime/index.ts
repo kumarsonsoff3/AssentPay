@@ -227,8 +227,8 @@ export default async function handler({ req, res }: Context) {
                 status: "connected",
                 environment: "sandbox",
                 checkedAt: new Date().toISOString(),
-                externalId: app.app_id,
-                scopes: "sandbox:app",
+                externalId: app.applicationIdentity,
+                scopes: "sandbox:app merchant:unverified",
                 credentials: sealCredentials(workspaceId, "paypal", {
                   clientId,
                   clientSecret,

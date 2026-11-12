@@ -35,12 +35,30 @@ const events: Record<string, { title: string; description: string; tone: string;
   "message.received": { title: "New email received", description: "A message was added to your conversations.", tone: "blue", icon: Mail },
 };
 export function ActivityTimeline({ events: items, timeZone = "UTC", compact = false }: { events: { id: string; action: string; occurredAt: string; kind?: string }[]; timeZone?: string; compact?: boolean }) {
-  return <ol className={`${ui.timeline} ${compact ? ui.compactTimeline : ""}`}>{items.map((event) => {
+  const dayFormatter = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone });
+  const clockFormatter = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone });
+  const formatDate = (value: string, formatter: Intl.DateTimeFormat) =>
+    Number.isFinite(Date.parse(value)) ? formatter.format(new Date(value)) : "Date unavailable";
+  return <ol className={`${ui.timeline} ${compact ? ui.compactTimeline : ui.groupedTimeline}`}>{items.map((event, index) => {
     const taskLabels: Record<string, string> = { "resend-ingest": "Email import", "financial-analyze": "Financial detail review", "document-import": "Attachment import", "gmail-sync": "Gmail message update", "paypal-execute": "Approved invoice draft", "paypal-reconcile": "Invoice status check", "workflow-notify": "Workspace notification", "provider-event": "Connected tool update" };
     const taskLabel = event.kind ? taskLabels[event.kind] : undefined;
     const detail = taskLabel && event.action.startsWith("job.") ? { title: `${taskLabel} ${event.action === "job.completed" ? "completed" : event.action === "job.failed" ? "needs attention" : "stopped"}`, description: "View Email & workspace processing for details.", tone: event.action === "job.failed" ? "amber" : "green", icon: event.action === "job.failed" ? TriangleAlert : CircleCheck } : events[event.action] || { title: event.action.replaceAll(/[._]/g, " ").replace(/^./, (c) => c.toUpperCase()), description: "Recorded in your workspace activity history.", tone: "blue", icon: Sparkles };
     const Icon = detail.icon;
-    return <li className={ui.event} key={event.id}><span className={`${ui.eventIcon} ${ui[detail.tone]}`}><Icon size={17} /></span><div className={ui.eventContent}><strong>{detail.title}</strong><p>{detail.description}</p><time dateTime={event.occurredAt} title={`${displayTime(event.occurredAt, timeZone, true)} (${timeZone})`}>{displayTime(event.occurredAt, timeZone, true)}</time></div></li>;
+    const day = formatDate(event.occurredAt, dayFormatter);
+    const startsDay = !compact && (index === 0 || day !== formatDate(items[index - 1].occurredAt, dayFormatter));
+    return <li key={event.id} className={ui.timelineEntry}>
+      {startsDay && <h3 className={ui.timelineDate}>{day}</h3>}
+      <div className={ui.event}>
+        <span className={`${ui.eventIcon} ${ui[detail.tone]}`}><Icon size={17} /></span>
+        <div className={ui.eventContent}>
+          <strong>{detail.title}</strong>
+          <p>{detail.description}</p>
+          <time dateTime={event.occurredAt} title={`${displayTime(event.occurredAt, timeZone, true)} (${timeZone})`}>
+            {compact ? displayTime(event.occurredAt, timeZone, true) : formatDate(event.occurredAt, clockFormatter)}
+          </time>
+        </div>
+      </div>
+    </li>;
   })}</ol>;
 }
 export function RecentConversations({ items, timeZone = "UTC" }: { items: ConversationSummary[]; timeZone?: string }) {

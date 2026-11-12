@@ -6,7 +6,7 @@ import { withStorageOperation } from "../data/coordinator";
 import { workerAuthorization } from "../integrations/health";
 import { openCredentials } from "../integrations/credentials";
 import { InputError, validId } from "../workspaces/validation";
-import { params, receiveEvent } from "./store";
+import { isPayoutEvent, params, receiveEvent } from "./store";
 export async function acceptPaypalEvent(input: Record<string, unknown>) {
   const workspaceId = validId(String(input.workspaceId));
   const webhookIds: Record<string, string> = JSON.parse(
@@ -94,6 +94,13 @@ export async function acceptPaypalEvent(input: Record<string, unknown>) {
       latest.record.version !== meta.connectionVersion
     )
       throw new InputError("Connection changed.", 409);
+    const resource = event.resource as {
+      id?: string; invoice?: { id?: string }; payout_batch_id?: string;
+      batch_header?: { payout_batch_id?: string };
+    } | undefined;
+    const resourceId = isPayoutEvent(String(event.event_type))
+      ? resource?.payout_batch_id || resource?.batch_header?.payout_batch_id
+      : resource?.invoice?.id || resource?.id;
     const accepted = await receiveEvent({
       workspaceId,
       integrationId: meta.$id,
@@ -102,7 +109,7 @@ export async function acceptPaypalEvent(input: Record<string, unknown>) {
       provider: "paypal",
       eventId: event.id as string,
       eventType: event.event_type as string,
-      payload: { resourceId: (event.resource as { invoice?: { id?: string }; id?: string })?.invoice?.id || (event.resource as { id?: string })?.id || "" },
+      payload: { resourceId: typeof resourceId === "string" ? resourceId : "" },
     });
     return { status: "accepted", ...accepted };
   });

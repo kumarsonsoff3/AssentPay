@@ -83,7 +83,7 @@
 .formBody input:focus-visible, .formBody select:focus-visible { outline:0; border-color:#5e7ffc; box-shadow:0 0 0 3px #315efb14; }
 .formBody input:disabled { background:#f6f8fb; color:#7a8aa2; }
 .formBody .fieldHint { display:block; font-size:11px; line-height:1.7; font-weight:400; color:#8290a6; }
-.fieldPair { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+.fieldPair { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); align-items:start; gap:20px; }
 .formFooter { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:17px 28px; border-top:1px solid #edf0f6; background:#fcfdff; }
 .footerNote { display:flex; align-items:center; gap:6px; font-size:10px; color:#8a98ad; line-height:1.7; }
 .footerActions { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-left:auto; }
@@ -170,3 +170,40 @@
 @media(max-width:700px) { .card .button, .accountSettingsLinks a { min-height:44px; } }
 
 .inboxSpacing { margin-bottom:22px; }
+
+.settingsHero { margin-bottom: 28px; }
+.settingsPage .card, .settingsPage .permissionNotice { box-shadow: 0 2px 8px #152b4d06; }
+.settingsPage .sectionIntro h2 { color: #172a49; font-size: 16px; }
+.settingsPage .sectionIntro > p, .settingsPage .contextNote { color: #52627c; font-size: 13px; line-height: 1.65; }
+.settingsPage .formBody :is(input:not([type="checkbox"]), select) { min-height: 44px; }
+.settingsPage :is(.card .button, .ghostButton, .organizationRow > a, .revealButton) { min-height: 44px; }
+.settingsPage .cardHeader .avatar { background: #eaf7f4; color: #17685c; }
+@media (max-width: 800px) {
+  .settingsHero { margin-bottom: 20px; }
+  .settingsPage .contextNote { display: block; padding: 10px 12px; margin-top: 10px; border: 1px solid #e2e8f1; border-radius: 9px; background: #fafcff; }
+}
+
+.settingsPage { display:grid; align-content:start; gap:16px; }
+.settingsHero { margin:0; }
+.settingsPage .sectionGrid { margin:0 0 12px; }
+.settingsEditor .cardHeader { padding:14px 18px; background:#f8faff; }
+.settingsEditor .cardHeader .avatar { width:39px; height:39px; border-radius:10px; }
+.settingsEditor .formBody { padding:18px; }
+.settingsEditor .formBody .fieldHint { color:#4f6381; }
+.settingsEditor .formFooter { padding:12px 18px; }
+.settingsEditor .footerNote { color:#4f6381; }
+.settingsEditor .button:disabled { background:#e8eef9; color:#536682; border-color:#d9e2ef; box-shadow:none; opacity:1; }
+.profileGroup { display:grid; gap:13px; min-width:0; }
+.profileGroup + .profileGroup { border-top:1px solid #e1e8f4; padding-top:16px; }
+.profileGroup h4 { margin:0; font-size:13px; font-weight:680; color:#172a49; }
+@media (max-width:800px) {
+  .settingsPage .sectionGrid { gap:10px; }
+  .settingsPage .sectionIntro { padding-top:0; }
+  .settingsPage .contextNote { display:none; }
+}
+@media (max-width:520px) {
+  .settingsPage { padding:14px 12px 36px; }
+  .settingsEditor .formFooter { flex-wrap:wrap; }
+  .settingsEditor .footerActions { width:100%; }
+  .settingsEditor .footerActions .button { flex:1; }
+}

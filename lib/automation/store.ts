@@ -107,7 +107,7 @@ export type Job = Models.Row & {
   workspaceId: string;
   integrationId: string;
   connectionVersion: string;
-  kind: "gmail-sync" | "provider-event" | "document-import" | "resend-ingest" | "financial-analyze" | "paypal-execute" | "workflow-notify" | "paypal-reconcile" | "financial-slack-notify";
+  kind: "gmail-sync" | "provider-event" | "document-import" | "resend-ingest" | "financial-analyze" | "paypal-execute" | "workflow-notify" | "workflow-reminder" | "paypal-reconcile" | "paypal-recover" | "paypal-payout-check" | "paypal-send-review" | "paypal-send" | "paypal-send-recover" | "financial-slack-notify" | "slack-card-delivery";
   requestedBy: string;
   status: string;
   attempts: number;
@@ -180,6 +180,8 @@ export async function enqueue(
   await signal(db, tx, input.workspaceId, "job.queued");
   return id;
 }
+export const isPayoutEvent = (eventType: string) => /^PAYMENT\.(PAYOUTSBATCH|PAYOUTS-ITEM)\./.test(eventType);
+
 export async function receiveEvent(input: {
   workspaceId: string;
   integrationId: string;
@@ -224,7 +226,7 @@ export async function receiveEvent(input: {
     await enqueue(
       {
         ...input,
-        kind: input.gmail ? "gmail-sync" : input.provider === "paypal" && input.eventType.startsWith("INVOICING.") ? "paypal-reconcile" : "provider-event",
+        kind: input.gmail ? "gmail-sync" : input.provider === "paypal" && (input.eventType.startsWith("INVOICING.") || isPayoutEvent(input.eventType)) ? "paypal-reconcile" : "provider-event",
         key: input.gmail ? "mailbox" : id,
         payload: { receiptId: id },
       },

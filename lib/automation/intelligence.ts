@@ -1,8 +1,11 @@
+import { payoutsEnabled, supportsSupplierPayout } from "./paypal-payout";
+import { aiMemoryContext, rememberExtractedMemory, memoryContextAllowed } from "./memory";
+import { sameFinancialValue, supportedBillingIntent, financialClaimId, billingEvidenceWarnings, quotesObligationReference } from "./financial-safety";
 import { pdfText } from "./pdf-text";
 import { officeText } from "./office-text";
 import { FINANCIAL_INSTRUCTIONS, senderFinancialHistory, triageReasons } from "./financial-triage";
 import { createHash } from "node:crypto";
-import { Query, Storage } from "node-appwrite";
+import { Query, Storage, type Models } from "node-appwrite";
 import { z } from "zod";
 import { dataClient, dataDatabase } from "../data/client";
 import { InputError } from "../workspaces/validation";
@@ -25,6 +28,7 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
     dataDatabase().listRows({ ...params("financial_workflows"), queries: [Query.equal("workspaceId", job.workspaceId), Query.orderDesc("$createdAt"), Query.limit(20)] }),
     senderFinancialHistory(job.workspaceId, mail),
   ]);
+  if (documents.rows.some(doc => doc.connectionVersion === job.connectionVersion && doc.status === "discovered" && /\.(pdf|txt|docx|xlsx)$/i.test(doc.filename) && doc.size > 0 && doc.size <= 5 * 1024 * 1024)) throw new InputError("Waiting for attachment import.", 503, "DOCUMENT_IMPORT_PENDING");
   const sources: Record<string, string> = { [messageId]: `Subject: ${mail.subject}\n${body.text}` }, warnings: string[] = [];
   if (body.bodyTruncated) warnings.push("Email text was truncated; review the complete original message before any financial action.");
   const content: AnalysisContent[] = [];
@@ -65,7 +69,9 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
       }
     }
   }
-  content.unshift({ type: "input_text", text: JSON.stringify({ sources, untrustedSenderFinancialHistory: senderHistory, attachments: documents.rows.map(doc => ({ sourceId: doc.$id, filename: doc.filename, status: doc.status, textExtracted: !!sources[doc.$id] })), untrustedWorkspaceContext: memory.rows.map((m) => ({ id: m.$id, sourceId: m.sourceId, facts: JSON.parse(m.factsJson) })), recentWorkflows: recent.rows.map((w) => ({ id: w.$id, counterparty: w.counterparty, amount: w.amount, currency: w.currency, status: w.status })), warnings }) });
+  const recentPermissions = await Promise.all(recent.rows.map(workflow => memoryContextAllowed(job.workspaceId, workflow.messageId)));
+  const allowedRecent = recent.rows.filter((_, index) => recentPermissions[index]);
+  content.unshift({ type: "input_text", text: JSON.stringify({ sources, untrustedSenderFinancialHistory: senderHistory, attachments: documents.rows.map(doc => ({ sourceId: doc.$id, filename: doc.filename, status: doc.status, textExtracted: !!sources[doc.$id] })), untrustedWorkspaceContext: memory.rows.map((m) => aiMemoryContext(m, job.workspaceId)).filter((m) => m !== null), recentWorkflows: allowedRecent.map((w) => ({ id: w.$id, counterparty: w.counterparty, amount: w.amount, currency: w.currency, status: w.status })), warnings }) });
   const output = await requestAnalysis(
     FINANCIAL_INSTRUCTIONS,
     content, z.toJSONSchema(extractionSchema), config,
@@ -76,28 +82,109 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
   const evidenceValid = extracted.evidence.length > 0 && extracted.evidence.every((e) => sources[e.sourceId]?.includes(e.quote) && e.quote.trim().length > 0);
   const reasons = triageReasons(extracted, senderHistory, documents.rows.map(doc => ({ filename: String(doc.filename), status: String(doc.status), textExtracted: !!sources[doc.$id] })), `${mail.subject}\n${body.text || ""}`);
   const financial = reasons.length > 0;
-  const currentFinancialEvidence = !["business", "irrelevant", "uncertain"].includes(extracted.category);
-  const fingerprint = stableId(job.workspaceId, extracted.counterparty?.toLowerCase() || "", extracted.reference?.toLowerCase() || stableId(String(mail.subject).toLowerCase(), String(body.text).replace(/\s+/g, " ").trim()), extracted.amount || "", extracted.currency || "");
-  const duplicate = await dataDatabase().listRows({ ...params("financial_workflows"), queries: [Query.equal("workspaceId", job.workspaceId), Query.equal("fingerprint", fingerprint), Query.limit(1)] });
-  let ready = currentFinancialEvidence && extracted.direction === "receivable" && !!extracted.counterparty && !!extracted.amount && Number(extracted.amount) > 0 && !!extracted.currency && extracted.confidence >= 0.85 && extracted.uncertainties.length === 0 && warnings.length === 0 && evidenceValid && !duplicate.rows.length;
-  let action = ready ? "create_draft_invoice" : "review";
-  let proposal = JSON.stringify({ extraction: extracted, warnings, evidenceValid, triage: { reasons, senderHistory }, sourceMessageId: messageId, duplicateOf: duplicate.rows[0]?.$id || null, intendedAction: action,
-    consequence: ready ? "Create a PayPal sandbox draft invoice for the customer email selected by the owner. No invoice is sent and no money moves." : "Review evidence and resolve uncertainty. No provider execution is authorized." });
+  const billingRequest = supportedBillingIntent(extracted);
+  const supplierPayout = payoutsEnabled() && supportsSupplierPayout(extracted);
+  const counterparty = extracted.counterparty?.trim() || "";
+  const reference = extracted.reference?.trim().toLowerCase() || "";
+  const tracksObligation = billingRequest || supplierPayout || extracted.category === "agreement";
+  const evidenceWarnings = tracksObligation ? billingEvidenceWarnings(extracted, sources) : [];
+  warnings.push(...evidenceWarnings);
+  if (tracksObligation && !counterparty) warnings.push("Identify the counterparty before approving a billing request.");
+  const obligationEvidence = tracksObligation && !!counterparty && evidenceValid && evidenceWarnings.length === 0;
+  const fingerprint = stableId(job.workspaceId, counterparty.toLowerCase(), reference || messageId, "obligation-v2");
+
   await commit(async (db, tx) => {
-    // The guarded transaction makes all outputs and the next job durable together.
     if (await optionalRow("message_analyses", messageId, db, tx)) return;
-    const currentDuplicates = await db.listRows({ ...params("financial_workflows"), transactionId: tx, queries: [Query.equal("workspaceId", job.workspaceId), Query.equal("fingerprint", fingerprint), Query.limit(1)] });
-    const isDuplicate = currentDuplicates.rows.length > 0;
-    if (isDuplicate) { ready = false; action = "review"; const revised = JSON.parse(proposal); revised.duplicateOf = currentDuplicates.rows[0].$id; revised.intendedAction = "review"; revised.consequence = "Possible duplicate financial request; review the existing workflow. No provider execution is authorized."; proposal = JSON.stringify(revised); }
-    await db.createRow({ ...params("message_analyses", messageId, tx), permissions: [], data: { workspaceId: job.workspaceId, messageId, category: extracted.category, status: ready ? "extracted" : "review", resultJson: proposal } });
+
+    const claimId = financialClaimId(job.workspaceId, fingerprint);
+    const claim = obligationEvidence ? await optionalRow("financial_claims", claimId, db, tx) : null;
+    if (claim && claim.workspaceId !== job.workspaceId) throw new InputError("Obligation claim unavailable.", 409);
+    let related: Models.DefaultRow[] = [];
+    if (obligationEvidence) {
+      // Keep historical rows in the duplicate check after upgrading a worker.
+      const [page, exact] = await Promise.all([
+        db.listRows({ ...params("financial_workflows"), transactionId: tx,
+          queries: [Query.equal("workspaceId", job.workspaceId), Query.equal("counterparty", counterparty), Query.limit(100)] }),
+        db.listRows({ ...params("financial_workflows"), transactionId: tx,
+          queries: [Query.equal("workspaceId", job.workspaceId), Query.equal("fingerprint", fingerprint), Query.limit(2)] }),
+      ]);
+      if (page.rows.length >= 100) warnings.push("Obligation history exceeds the review limit. Verify this reference manually.");
+      const history = new Map([...page.rows, ...exact.rows].map(row => [row.$id, row]));
+      related = [...history.values()].filter(row => {
+        if (row.workspaceId !== job.workspaceId) return false;
+        try {
+          const proposal = JSON.parse(row.proposalJson);
+          return proposal.obligationEvidence !== false && proposal.extraction?.reference?.trim().toLowerCase() === reference;
+        } catch {
+          warnings.push("A historical proposal could not be checked. Verify this reference manually.");
+          return false;
+        }
+      });
+    }
+    const primary = claim ? await optionalRow("financial_workflows", claim.workflowId, db, tx)
+      : related.find(row => row.action === "create_draft_invoice" || !!row.providerId) || related[0];
+    if (claim && primary?.workspaceId !== job.workspaceId) throw new InputError("Obligation workflow unavailable.", 409);
+    const hasMatchingValue = (row: Models.DefaultRow) => sameFinancialValue(String(row.amount), String(row.currency), extracted.amount || "", extracted.currency || "");
+    let primaryIsAgreement = false;
+    if (primary) {
+      try {
+        const saved = JSON.parse(primary.proposalJson);
+        const prior = extractionSchema.safeParse(saved.extraction);
+        primaryIsAgreement = prior.success && prior.data.category === "agreement"
+          && saved.evidenceValid === true && saved.obligationEvidence !== false
+          && saved.warnings?.length === 0 && prior.data.uncertainties.length === 0
+          && prior.data.evidence.some(e => quotesObligationReference(e.quote, reference));
+      } catch {
+        warnings.push("The matching proposal could not be checked. Verify this reference manually.");
+      }
+    }
+    const qualifiesForApproval = (billingRequest || supplierPayout) && obligationEvidence && warnings.length === 0 && extracted.confidence >= 0.85 && extracted.uncertainties.length === 0;
+
+    // An agreement can corroborate a later request. Transfer its claim only once
+    // and only when there is no conflicting history or prior provider action.
+    const agreement = qualifiesForApproval && primary?.status === "needs_review" && primary.action === "review"
+      && !primary.providerId && primaryIsAgreement
+      && hasMatchingValue(primary) && related.every(row => row.$id === primary.$id) ? primary : null;
+    const duplicateOf = agreement ? null : primary?.$id || null;
+    const ready = qualifiesForApproval && !duplicateOf;
+    const action = ready ? supplierPayout ? "pay_supplier" : "create_draft_invoice" : "review";
+    const isDuplicate = !!duplicateOf;
+
+    if (primary && !hasMatchingValue(primary)) {
+      const beforeDraft = ["pending_approval", "approved"].includes(primary.status);
+      const canHoldSend = ["executing", "draft_created", "send_approved", "reconciliation_required"].includes(primary.status);
+      const agreementConflict = primaryIsAgreement && primary.status === "needs_review";
+      if (beforeDraft || canHoldSend || agreementConflict) {
+        await db.updateRow({ ...params("financial_workflows", primary.$id, tx),
+          data: { action: "review", ...(beforeDraft || agreementConflict ? { status: beforeDraft ? "needs_review" : "duplicate_review" } : {}) } });
+      }
+      warnings.push("Another source reports a different amount or currency for this obligation.");
+      await notify(db, tx, job.workspaceId, primary.$id + ":conflict", "Conflicting obligation values",
+        "Review both sources and any existing PayPal invoice before taking further action.", "approval");
+    }
+
+    if (financial && obligationEvidence && !isDuplicate) {
+      if (claim) await db.updateRow({ ...params("financial_claims", claimId, tx), data: { workflowId: messageId } });
+      else await db.createRow({ ...params("financial_claims", claimId, tx), permissions: [], data: { workspaceId: job.workspaceId, workflowId: messageId, fingerprint } });
+    }
+    const proposal = JSON.stringify({
+      extraction: extracted, warnings, evidenceValid, obligationEvidence, triage: { reasons, senderHistory },
+      sourceMessageId: messageId, duplicateOf, agreementWorkflowId: agreement?.$id || null, intendedAction: action,
+      consequence: ready ? supplierPayout ? "Send the exact approved sandbox payout to the supplier email selected by the owner." : "Create a PayPal sandbox draft invoice for the customer email selected by the owner. No invoice is sent and no money moves."
+        : isDuplicate ? "Possible duplicate financial request. Review the existing workflow before taking any action."
+        : "Review the source evidence. This proposal has no financial authorization.",
+    });
+    await db.createRow({ ...params("message_analyses", messageId, tx), permissions: [], data: { workspaceId: job.workspaceId, messageId, category: extracted.category, status: ready ? "extracted" : financial ? "review" : "ignored", resultJson: proposal } });
     await db.updateRow({ ...params("mail_messages", messageId, tx), data: { financial } });
     if (financial) {
       await db.createRow({ ...params("financial_workflows", messageId, tx), permissions: [], data: { workspaceId: job.workspaceId, messageId, status: isDuplicate ? "duplicate_review" : ready ? "pending_approval" : "needs_review", action,
-        counterparty: extracted.counterparty || "Unknown", amount: extracted.amount || "", currency: extracted.currency || "", providerId: "", fingerprint, proposalJson: proposal } });
-      await enqueue({ ...job, kind: "financial-slack-notify", key: messageId, payload: { workflowId: messageId } }, db, tx);
-      await notify(db, tx, job.workspaceId, messageId, ready ? "Financial action awaiting approval" : "Financial message needs review", "Review source evidence and the proposed action in your dashboard.", "approval");
+        counterparty: counterparty || "Unknown", amount: extracted.amount || "", currency: extracted.currency || "", providerId: "", fingerprint, proposalJson: proposal } });
+      if (!isDuplicate) await enqueue({ ...job, kind: "financial-slack-notify", key: messageId, payload: { workflowId: messageId } }, db, tx);
+      if (!isDuplicate) await notify(db, tx, job.workspaceId, messageId, ready ? "Financial action awaiting approval" : "Financial message needs review", "Review source evidence and the proposed action in your dashboard.", "approval");
     }
-    await db.upsertRow({ ...params("agent_memory", messageId, tx), permissions: [], data: { workspaceId: job.workspaceId, sourceId: messageId, status: "active", expiresAt: new Date(Date.now() + 90 * 86400000).toISOString(), factsJson: JSON.stringify({ category: extracted.category, senderEmail: senderHistory.senderEmail, counterparty: extracted.counterparty, reference: extracted.reference, amount: extracted.amount, currency: extracted.currency, confidence: extracted.confidence, authority: "unconfirmed_extraction" }) } });
+    if (financial) await rememberExtractedMemory(db, tx, job.workspaceId, messageId, {
+      ...(extracted.category === "agreement" ? { dueDate: extracted.dueDate, paymentTerms: extracted.paymentTerms } : {}),
+      category: extracted.category, senderEmail: senderHistory.senderEmail, counterparty: extracted.counterparty, reference: extracted.reference, amount: extracted.amount, currency: extracted.currency, confidence: extracted.confidence, authority: "unconfirmed_extraction" });
     await audit(db, tx, job.workspaceId, job.requestedBy, "message.analyzed", messageId, messageId, { category: extracted.category, evidenceValid, action });
   });
 }

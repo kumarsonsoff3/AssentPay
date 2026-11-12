@@ -1,4 +1,9 @@
 "use client";
+
+import { SelectField, workspaceRoleOptions } from "@/components/controls/select-field";
+import { IndustrySelect } from "@/components/controls/industry-select";
+import { RegionalSelect } from "@/components/controls/regional-select";
+import type { RegionalOptions } from "@/lib/workspaces/regions";
 import { useToast } from "@/components/feedback/toast-provider";
 import { InlineFeedback, Spinner } from "@/components/feedback/feedback";
 import { useRef, useState, type FormEvent } from "react";
@@ -109,7 +114,7 @@ export function IntegrationManager({
   }
   return <div className={connections.manager}>
     {!credentialsOpen && !confirm && feedback}
-    <div className={connections.sectionHeading}><div><span className={connections.eyebrow}>YOUR CONNECTED WORKSPACE</span><h2>Everything your business works with.</h2><p>Bring your email, team updates, and invoice tools together.</p></div><span className={connections.connectionCount}><span />{connected} tool{connected === 1 ? "" : "s"} connected</span></div>
+    <div className={connections.sectionHeading}><div><span className={connections.eyebrow}>YOUR CONNECTED WORKSPACE</span><h2>Connected services</h2><p>Check setup and permissions for email, team alerts, and sandbox payments.</p></div><span className={connections.connectionCount}><span />{connected} tool{connected === 1 ? "" : "s"} connected</span></div>
     <div className={connections.groupHeading}><span className={connections.groupNumber}>01</span><div><h3>Email & conversations</h3><p>Choose which business emails reach your workspace.</p></div></div>
     <WorkspaceInbox workspaceId={workspace.id} canManage={canManage(workspace.role)} onStatusChange={setInboxStatus} />
     <div className={connections.groupHeading}><span className={connections.groupNumber}>02</span><div><h3>Your connected tools</h3><p>Connect a tool below, then manage its account and connection status here.</p></div></div>
@@ -129,8 +134,8 @@ export function IntegrationManager({
         <footer className={connections.cardFooter}><div className={connections.cardActions}>{manage && <>{provider === "paypal" ? <button className={connections.primary} disabled={busy || !ready.paypal} onClick={() => setCredentialsOpen(true)}>{item ? "Update sandbox app" : "Connect PayPal"}<ArrowUpRight size={13} /></button> : <button className={connections.primary} disabled={busy || !ready[provider]} onClick={() => void run(`${api}/${provider}/connect`)}>{busy && <Spinner size={14} />}{item ? `Reconnect ${detail.name}` : `Connect ${detail.name}`}<ArrowUpRight size={13} /></button>}{item && <button className={connections.secondary} disabled={busy || !triggerReady} title={!triggerReady ? "Connection checks will be available when workspace processing is configured." : "Verify the saved account connection"} onClick={() => void run(`${api}/${provider}/check`)}>{busy ? <Spinner size={14} /> : <RefreshCw size={14} />}Check status</button>}</>}{!manage && <span className={connections.readOnly}>Managed by your workspace {provider === "paypal" ? "owner" : "admins"}</span>}</div>{manage && item && <button className={connections.disconnect} disabled={busy} onClick={() => setConfirm(provider)} aria-label={`Disconnect ${detail.name}`}><Unplug size={13} />Disconnect</button>}</footer>
       </section>;
     })}</div>
-    <div className={connections.securityNote}><span><ShieldCheck size={20} /></span><div><strong>Connected to your tools. Guided by you.</strong><p>Credentials are encrypted and kept on the server. Forwarded messages appear in Conversations; financial proposals are available in Approvals for your review.</p></div></div>
-    <Dialog.Root open={credentialsOpen} onOpenChange={(open) => { if (!busy) setCredentialsOpen(open); }}><Dialog.Portal><Dialog.Overlay className={connections.overlay} /><Dialog.Content className={connections.dialog}><Dialog.Close className={connections.close} disabled={busy} aria-label="Close PayPal setup"><X size={18} /></Dialog.Close><span className={connections.dialogMark}><ProviderMark provider="paypal" size={31} /></span><span className={connections.category}>PAYPAL SANDBOX</span><Dialog.Title>Connect your sandbox merchant app</Dialog.Title><Dialog.Description>Use the sandbox REST app credentials for this business. The workspace owner can approve invoice drafts after connecting.</Dialog.Description>{feedback}<form action="/api/forms/unavailable" method="post" onSubmit={paypal} className={connections.credentialsForm}><fieldset disabled={busy}><label>Merchant label<input name="merchantLabel" required maxLength={128} autoComplete="off" placeholder="Your business name" /><small>A friendly name to identify this merchant account.</small></label><label>Sandbox client ID<input name="clientId" required maxLength={1024} autoComplete="off" spellCheck={false} placeholder="Paste your sandbox client ID" /></label><label>Sandbox client secret<input type="password" name="clientSecret" required maxLength={1024} autoComplete="new-password" placeholder="Paste your sandbox client secret" /><small>Stored securely on the server after verification.</small></label></fieldset><div className={connections.sandboxNote}><ShieldCheck size={15} />This connects a sandbox app. It does not move real money.</div><div className={connections.dialogActions}><Dialog.Close type="button" className={connections.secondary} disabled={busy}>Cancel</Dialog.Close><button className={connections.primary} disabled={busy}>{busy && <Spinner size={15} />}{busy ? "Verifying app…" : "Verify & connect"}<ArrowRight size={14} /></button></div></form></Dialog.Content></Dialog.Portal></Dialog.Root>
+    <div className={connections.securityNote}><span><ShieldCheck size={20} /></span><div><strong>Connection security</strong><p>Credentials are encrypted and kept on the server. Forwarded messages appear in Conversations; financial proposals are available in Approvals for your review.</p></div></div>
+    <Dialog.Root open={credentialsOpen} onOpenChange={(open) => { if (!busy) setCredentialsOpen(open); }}><Dialog.Portal><Dialog.Overlay className={connections.overlay} /><Dialog.Content className={connections.dialog}><Dialog.Close className={connections.close} disabled={busy} aria-label="Close PayPal setup"><X size={18} /></Dialog.Close><span className={connections.dialogMark}><ProviderMark provider="paypal" size={31} /></span><span className={connections.category}>PAYPAL SANDBOX</span><Dialog.Title>Connect your sandbox merchant app</Dialog.Title><Dialog.Description>Use this business’s sandbox REST app credentials. PayPal features and transaction currencies depend on the merchant account. Your workspace preferences don’t change what PayPal supports.</Dialog.Description>{feedback}<form action="/api/forms/unavailable" method="post" onSubmit={paypal} className={connections.credentialsForm}><fieldset disabled={busy}><label>Merchant label<input name="merchantLabel" required maxLength={128} autoComplete="off" placeholder="Your business name" /><small>A friendly name to identify this merchant account.</small></label><label>Sandbox client ID<input name="clientId" required maxLength={1024} autoComplete="off" spellCheck={false} placeholder="Paste your sandbox client ID" /></label><label>Sandbox client secret<input type="password" name="clientSecret" required maxLength={1024} autoComplete="new-password" placeholder="Paste your sandbox client secret" /><small>Stored securely on the server after verification.</small></label></fieldset><div className={connections.sandboxNote}><ShieldCheck size={15} />This connects a sandbox app. It does not move real money.</div><div className={connections.dialogActions}><Dialog.Close type="button" className={connections.secondary} disabled={busy}>Cancel</Dialog.Close><button className={connections.primary} disabled={busy}>{busy && <Spinner size={15} />}{busy ? "Verifying app…" : "Verify & connect"}<ArrowRight size={14} /></button></div></form></Dialog.Content></Dialog.Portal></Dialog.Root>
     <Dialog.Root open={!!confirm} onOpenChange={(open) => { if (!open && !busy) setConfirm(null); }}><Dialog.Portal><Dialog.Overlay className={connections.overlay} /><Dialog.Content className={`${connections.dialog} ${connections.disconnectDialog}`}><Dialog.Close className={connections.close} disabled={busy} aria-label="Close disconnect confirmation"><X size={18} /></Dialog.Close><span className={connections.disconnectIcon}><Unplug size={23} /></span><Dialog.Title>Disconnect {confirm ? descriptions[confirm].name : "this tool"}?</Dialog.Title><Dialog.Description>This removes the saved connection from this workspace. You can reconnect later. To revoke the provider’s permissions too, use its account settings.</Dialog.Description>{feedback}<div className={connections.dialogActions}><Dialog.Close className={connections.secondary} disabled={busy}>Keep connection</Dialog.Close><button className={connections.dangerButton} disabled={busy} onClick={async () => { if (confirm && await run(`${api}/${confirm}/disconnect`)) setConfirm(null); }}>{busy && <Spinner size={15} />}Disconnect tool</button></div></Dialog.Content></Dialog.Portal></Dialog.Root>
   </div>;
 }
@@ -143,13 +148,16 @@ export function TeamManager({
 }) {
   const { busy, run, feedback } = useMutation(),
     [remove, setRemove] = useState<string | null>(null),
+    [inviteRole, setInviteRole] = useState("member"),
     owner = workspace.role === "owner",
     api = `/api/workspaces/${workspace.id}`;
   async function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    if (await run(`${api}/invite`, Object.fromEntries(new FormData(form))))
+    if (await run(`${api}/invite`, Object.fromEntries(new FormData(form)))) {
       form.reset();
+      setInviteRole("member");
+    }
   }
   return (
     <>
@@ -178,11 +186,7 @@ export function TeamManager({
             </label>
             <label>
               Workspace role
-              <select name="role" defaultValue="member">
-                <option value="admin">Admin</option>
-                <option value="member">Member</option>
-                <option value="viewer">Viewer</option>
-              </select>
+              <SelectField name="role" value={inviteRole} onValueChange={setInviteRole} options={workspaceRoleOptions} />
             </label>
             <button className={styles.button} disabled={busy}>{busy && <Spinner size={15}/>} 
               {busy ? "Sending…" : "Send invitation"}
@@ -198,48 +202,55 @@ export function TeamManager({
             {members.filter((m) => !m.confirmed).length} pending
           </span>
         </div>
-        <div className={styles.tableWrap}>
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Actions</th>
+        <div className={styles.tableWrap} role="region" aria-label="Workspace members" tabIndex={0}>
+          <table className={styles.teamTable} role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader">Name</th>
+                <th role="columnheader">Role</th>
+                <th role="columnheader">Status</th>
+                <th role="columnheader">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {members.map((m) => (
-                <tr key={m.id}>
-                  <td>
-                    <div className={ui.memberIdentity}><span className={ui.memberAvatar}>{(m.name || m.email).split(/\s+/).slice(0,2).map((part)=>part[0]).join("").toUpperCase()}</span><div><strong>{m.name || m.email}</strong><small>{m.email}</small></div></div>
+                <tr role="row" key={m.id}>
+                  <td role="cell">
+                    <div className={ui.memberIdentity}>
+                      <span className={ui.memberAvatar} aria-hidden="true">
+                        {(m.name || m.email || (m.confirmed ? "M" : "I")).split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}
+                      </span>
+                      <div>
+                        <strong>{m.name || m.email || (m.confirmed ? "Workspace member" : "Invited teammate")}</strong>
+                        {m.name && m.email && <small>{m.email}</small>}
+                      </div>
+                    </div>
                   </td>
-                  <td>
+                  <td role="cell">
+                    <span className={styles.mobileCellLabel} aria-hidden="true">Role</span>
                     {owner && !m.roles.includes("owner") ? (
-                      <select
+                      <SelectField
                         aria-label={`Role for ${m.email}`}
                         value={
                           m.roles.find((r) =>
                             ["admin", "member", "viewer"].includes(r),
                           ) || "viewer"
                         }
+                        options={workspaceRoleOptions}
                         disabled={busy}
-                        onChange={(e) =>
+                        onValueChange={(role) =>
                           run(`${api}/role`, {
                             membershipId: m.id,
-                            role: e.target.value,
+                            role,
                           })
                         }
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="member">Member</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
+                      />
                     ) : (
-                      m.roles.join(", ")
+                      <span className={styles.memberRole}>{m.roles.join(", ")}</span>
                     )}
                   </td>
-                  <td>
+                  <td role="cell">
+                    <span className={styles.mobileCellLabel} aria-hidden="true">Status</span>
                     <span
                       className={
                         m.confirmed ? styles.connected : styles.mutedStatus
@@ -248,7 +259,7 @@ export function TeamManager({
                       {m.confirmed ? "Active" : "Invited"}
                     </span>
                   </td>
-                  <td>
+                  <td role="cell">
                     {owner &&
                       !m.roles.includes("owner") &&
                       (remove === m.id ? (
@@ -280,6 +291,7 @@ export function TeamManager({
                           className={styles.danger}
                           disabled={busy}
                           onClick={() => setRemove(m.id)}
+                          aria-label={!m.confirmed && m.email ? `Cancel invite for ${m.email}` : undefined}
                         >{busy && <Spinner size={15}/>} 
                           {m.confirmed ? "Remove" : "Cancel invite"}
                         </button>
@@ -298,15 +310,20 @@ export function TeamManager({
         </div>
       </section>
       <PhaseNotice>
-        Only owners can invite teammates and change roles. Workspace roles do
-        not yet authorize financial execution.
+        Only workspace owners can invite teammates, change roles, and approve financial actions.
       </PhaseNotice>
     </>
   );
 }
-export function WorkspaceSettings({ workspace, rulesOnly = false, profileOnly = false }: { workspace: Workspace; rulesOnly?: boolean; profileOnly?: boolean }) {
+type WorkspaceSettingsProps = { workspace: Workspace } & (
+  | { rulesOnly: true; profileOnly?: never; regionalOptions?: never }
+  | { rulesOnly?: false; profileOnly?: boolean; regionalOptions: RegionalOptions }
+);
+
+export function WorkspaceSettings({ workspace, rulesOnly, profileOnly, regionalOptions }: WorkspaceSettingsProps) {
   const { busy, run, feedback } = useMutation();
   const [dirty, setDirty] = useState(false);
+  const [resetCount, setResetCount] = useState(0);
   const manage = canManage(workspace.role);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -330,17 +347,26 @@ export function WorkspaceSettings({ workspace, rulesOnly = false, profileOnly = 
     description={rulesOnly ? "Set the preferences your organization uses when reviewing financial work." : "Keep your business profile accurate and set the currency and time zone for your workspace."}
     note={rulesOnly ? <><strong>Your team stays in control</strong>These preferences do not authorize payments or activate financial execution.</> : <><strong>Organization name</strong>{workspace.name}<br/>Change the workspace’s primary name in Organization name.</>}
   >
-    <div className={ui.card}>
+    <div className={`${ui.card} ${ui.settingsEditor}`}>
       <div className={ui.cardHeader}><span className={ui.avatar}>{rulesOnly ? <SlidersHorizontal size={22}/> : <Building2 size={22}/>}</span><div><h3>{rulesOnly ? "Review preferences" : "Business details"}</h3><p>{rulesOnly ? "Applied to this organization only" : "Your business profile and regional defaults"}</p></div></div>
-      <form action="/api/forms/unavailable" method="post" onSubmit={save} onChange={() => setDirty(true)} className={ui.cardForm}>
+      <form action="/api/forms/unavailable" method="post" onSubmit={save} onChange={() => setDirty(true)} onReset={() => { setDirty(false); setResetCount(count => count + 1); }} className={ui.cardForm}>
         <div className={ui.formBody}><fieldset disabled={busy || !manage}>
           <legend className="sr-only">{rulesOnly ? "Approval preferences" : "Business profile"}</legend>
           {!rulesOnly && <>
+            <div className={ui.profileGroup}>
+            <h4>Business identity</h4>
             <label>Trading name <span className={ui.optional}>Optional</span><input name="businessName" defaultValue={workspace.businessName === workspace.name ? "" : workspace.businessName} placeholder={workspace.name} maxLength={128}/><span className={ui.fieldHint}>Only needed if your business uses a different name. Otherwise, we’ll use {workspace.name}.</span></label>
             <label>Business website<input name="website" type="url" defaultValue={workspace.website} placeholder="https://yourbusiness.com" maxLength={512}/></label>
-            <label>Industry<input name="industry" defaultValue={workspace.industry} placeholder="e.g. Design & creative services" required maxLength={128}/><span className={ui.fieldHint}>The type of work your business does.</span></label>
-            <div className={ui.fieldPair}><label>Country<input name="country" defaultValue={workspace.country} required minLength={2} maxLength={2}/><span className={ui.fieldHint}>Two-letter code, such as US or IN.</span></label><label>Currency<input name="currency" defaultValue={workspace.currency} required minLength={3} maxLength={3}/><span className={ui.fieldHint}>Used to display amounts, such as USD.</span></label></div>
-            <label>Time zone<input name="timezone" defaultValue={workspace.timezone} required maxLength={64}/><span className={ui.fieldHint}>Used for dates and activity in this workspace.</span></label>
+            <IndustrySelect key={`${workspace.industry}:${resetCount}`} className={ui.field} value={workspace.industry} />
+            </div>
+            <div className={ui.profileGroup}>
+            <h4>Regional preferences</h4>
+            <div className={ui.fieldPair}>
+              <RegionalSelect className={ui.field} label="Country or region" name="country" value={workspace.country} options={regionalOptions.country} />
+              <RegionalSelect className={ui.field} label="Currency" name="currency" value={workspace.currency} options={regionalOptions.currency} hint="Default currency for workspace amounts." hintClassName={ui.fieldHint} />
+            </div>
+            <RegionalSelect className={ui.field} label="Time zone" name="timezone" value={workspace.timezone} options={regionalOptions.timezone} hint="Used to display dates and times." hintClassName={ui.fieldHint} />
+            </div>
           </>}
           {!profileOnly && <>
             <label>Approval threshold<div className={ui.amountInput}><span>{workspace.currency}</span><input name="approvalThreshold" type="number" min="0" max="1000000000" step="0.01" defaultValue={workspace.approvalThreshold} required/></div><span className={ui.fieldHint}>Your saved amount for reviewing approval requests.</span></label>
@@ -348,7 +374,7 @@ export function WorkspaceSettings({ workspace, rulesOnly = false, profileOnly = 
           </>}
         </fieldset></div>
         {feedback}
-        <div className={ui.formFooter}><span className={ui.footerNote}>{manage ? "Changes apply to this organization" : "Only owners and admins can edit these details"}</span><div className={ui.footerActions}>{dirty && manage && <button type="reset" className={ui.ghostButton} disabled={busy} onClick={()=>setDirty(false)}>{busy && <Spinner size={15}/>} Discard</button>}<button className={ui.button} disabled={busy || !manage || !dirty}>{busy && <Spinner size={16}/>}{busy ? "Saving…" : "Save changes"}</button></div></div>
+        <div className={ui.formFooter}><span className={ui.footerNote}>{manage ? "Changes apply to this organization" : "Only owners and admins can edit these details"}</span><div className={ui.footerActions}>{dirty && manage && <button type="reset" className={ui.ghostButton} disabled={busy}>{busy && <Spinner size={15}/>} Discard</button>}<button className={ui.button} disabled={busy || !manage || !dirty}>{busy && <Spinner size={16}/>}{busy ? "Saving…" : "Save changes"}</button></div></div>
       </form>
     </div>
   </SettingsSection>;

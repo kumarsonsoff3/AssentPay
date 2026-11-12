@@ -11,8 +11,9 @@ import { Client } from "node-appwrite";
 import { authConfig, SESSION_COOKIE } from "@/lib/auth/config";
 import { getCurrentUser } from "@/lib/auth/appwrite";
 import { RuntimeStore } from "@/lib/data/runtime";
-import { dataDatabase, databaseId } from "@/lib/data/client";
+import { dataClient, dataDatabase, databaseId } from "@/lib/data/client";
 import { withStorageOperation } from "@/lib/data/coordinator";
+import { isTransactionConflict } from "@/lib/errors";
 import {
   defaultProfile,
   type Workspace,
@@ -21,7 +22,7 @@ import {
 } from "./types";
 import { InputError, validId } from "./validation";
 import { assertWorkspaceMembership } from "./access";
-import { provisionInbox } from "../automation/inbox";
+import { inboundDomain, provisionInbox } from "../automation/inbox";
 export const WORKSPACE_COOKIE = "assentpay-workspace";
 export function workspaceStore(userId: string) {
   return new RuntimeStore(
@@ -87,9 +88,12 @@ export async function getWorkspace(
   teamId: string,
   userId: string,
 ): Promise<Workspace> {
+  return readWorkspace(teamId, userId);
+}
+async function readWorkspace(teamId: string, userId: string, listedName?: string): Promise<Workspace> {
   const { role } = await workspaceAccess(teamId, userId);
-  const [team, stored] = await Promise.all([
-    (await sessionTeams()).get({ teamId }),
+  const [name, stored] = await Promise.all([
+    listedName ?? sessionTeams().then(teams => teams.get({ teamId })).then(team => team.name),
     workspaceStore(userId).profile(teamId),
   ]);
   const profile = stored?.profile;
@@ -97,7 +101,7 @@ export async function getWorkspace(
     ...defaultProfile,
     ...profile,
     id: teamId,
-    name: team.name,
+    name,
     role,
     profileSaved: profile?.profileSaved || false,
     onboardingComplete: profile?.onboardingComplete || false,
@@ -114,12 +118,17 @@ export async function listWorkspaces(userId: string) {
         ...(cursor ? [Query.cursorAfter(cursor)] : []),
       ],
     });
-    for (const team of page.teams) {
-      try {
-        result.push(await getWorkspace(team.$id, userId));
-      } catch (error) {
-        if (!(error instanceof InputError && error.status === 403)) throw error;
-      }
+    // Bound concurrent Appwrite reads without making each workspace wait for the previous one.
+    for (let offset = 0; offset < page.teams.length; offset += 8) {
+      const workspaces = await Promise.all(page.teams.slice(offset, offset + 8).map(async (team) => {
+        try {
+          return await readWorkspace(team.$id, userId, team.name);
+        } catch (error) {
+          if (error instanceof InputError && error.status === 403) return null;
+          throw error;
+        }
+      }));
+      result.push(...workspaces.filter((workspace): workspace is Workspace => workspace !== null));
     }
     cursor = page.teams.length === 100 ? page.teams.at(-1)?.$id : undefined;
   } while (cursor);
@@ -137,6 +146,8 @@ export async function selectWorkspace(id: string) {
 export async function createWorkspace(name: string, userId: string) {
   const user = await apiUser();
   if (user.$id !== userId) throw new InputError("Sign in to continue.", 401);
+  const createInbox = Boolean(process.env.RESEND_INBOUND_DOMAIN);
+  if (createInbox) inboundDomain();
   return withStorageOperation("mutation", async (op) => {
     const teams = await sessionTeams();
     await op.check();
@@ -147,23 +158,29 @@ export async function createWorkspace(name: string, userId: string) {
     });
     const store = workspaceStore(userId);
     try {
-      await store.createProfile(team.$id, {
-        ...defaultProfile,
-        businessName: name,
-        profileSaved: false,
-        onboardingComplete: false,
-      });
+      await store.createProfile(
+        team.$id,
+        {
+          ...defaultProfile,
+          businessName: name,
+          profileSaved: false,
+          onboardingComplete: false,
+        },
+        createInbox ? (db, tx) => provisionInbox(team.$id, userId, db, tx) : undefined,
+      );
     } catch (error) {
-      // Compensate only when the profile is confirmed absent; an ambiguous
-      // transaction result must not destroy a successfully-created workspace.
-      if (!(await store.profile(team.$id)))
-        await teams.delete({ teamId: team.$id });
-      throw error;
+      const profile = await store.profile(team.$id);
+      if (!profile) {
+        // A confirmed rollback can be compensated. A lost commit response may
+        // still complete, so leave its team intact.
+        if (isTransactionConflict(error)) await teams.delete({ teamId: team.$id });
+        throw error;
+      }
     }
-    if (process.env.RESEND_INBOUND_DOMAIN) await provisionInbox(team.$id, userId);
+    const workspace = await getWorkspace(team.$id, userId);
     await selectWorkspace(team.$id);
-    return getWorkspace(team.$id, userId);
-  });
+    return workspace;
+  }, { retryConflicts: true });
 }
 export async function saveProfile(id: string, profile: BusinessProfile) {
   const user = await apiUser();
@@ -201,6 +218,7 @@ export async function completeWorkspace(id: string) {
   });
 }
 export async function listMembers(id: string) {
+  validId(id);
   const teams = await sessionTeams();
   const members: Models.Membership[] = [];
   let cursor: string | undefined;
@@ -218,11 +236,41 @@ export async function listMembers(id: string) {
         ? page.memberships.at(-1)?.$id
         : undefined;
   } while (cursor);
+  const pendingWithoutEmail = members.filter(
+    (member) => member.teamId === id && !member.confirm && !member.userEmail,
+  );
+  const invitationEmails = new Map<string, string>();
+  if (pendingWithoutEmail.length > 0) {
+    const user = await apiUser();
+    // Membership privacy can hide these fields from the session client.
+    // Only a confirmed owner of this team can recover a pending invite's address.
+    const isOwner = members.some(
+      (member) => member.teamId === id && member.userId === user.$id &&
+        member.confirm && member.roles.includes("owner"),
+    );
+    if (isOwner) {
+      const serverTeams = new Teams(dataClient());
+      for (let offset = 0; offset < pendingWithoutEmail.length; offset += 8) {
+        await Promise.all(pendingWithoutEmail.slice(offset, offset + 8).map(async (pending) => {
+          try {
+            const invite = await serverTeams.getMembership({ teamId: id, membershipId: pending.$id });
+            if (invite.teamId === id && invite.$id === pending.$id &&
+                invite.userId === pending.userId && !invite.confirm && invite.userEmail) {
+              invitationEmails.set(pending.$id, invite.userEmail);
+            }
+          } catch (error) {
+            // The invite may have been canceled while the page was loading.
+            if (!(error instanceof AppwriteException && error.code === 404)) throw error;
+          }
+        }));
+      }
+    }
+  }
   return members.map((m) => ({
     id: m.$id,
     userId: m.userId,
     name: m.userName,
-    email: m.userEmail,
+    email: m.userEmail || invitationEmails.get(m.$id) || "",
     roles: m.roles,
     confirmed: m.confirm,
   }));

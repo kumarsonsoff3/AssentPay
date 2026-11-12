@@ -1,10 +1,15 @@
 import type { ReactNode } from "react";
-import { ShieldCheck } from "@/components/icons";
+import { ShieldCheck, Settings2, Trash2, UserRound } from "@/components/icons";
+import { SectionHeader } from "@/components/dashboard/section-header";
 import styles from "./settings.module.css";
 
 export function SettingsPage({ eyebrow, title, description, children }: { eyebrow: string; title: string; description: string; children: ReactNode }) {
+  const danger = title === "Danger zone";
+  const Icon = danger ? Trash2 : eyebrow === "ACCOUNT SETTINGS" ? UserRound : Settings2;
   return <div className={styles.settingsPage}>
-    <header className={styles.pageHeader}><p className={styles.eyebrow}>{eyebrow}</p><h1>{title}</h1><p>{description}</p></header>
+    <div className={styles.settingsHero}>
+      <SectionHeader category={eyebrow} title={title} description={description} icon={<Icon size={26} />} tone={danger ? "rose" : "teal"} />
+    </div>
     {children}
   </div>;
 }

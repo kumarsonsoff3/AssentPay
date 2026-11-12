@@ -1,15 +1,26 @@
+import { paypalApplicationIdentity } from './paypal-identity';
 import { AuthConfigurationError } from "@/lib/errors";
 import { InputError } from "@/lib/workspaces/validation";
 import { assertEncryption } from "./crypto";
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.send",
 ] as const;
 export function hasGmailScopes(scope: string | undefined) {
   const granted = new Set(scope?.split(" ") || []);
   return GMAIL_SCOPES.every((required) => granted.has(required));
 }
-export const SLACK_SCOPES = ["chat:write", "incoming-webhook", ...(process.env.SLACK_REVIEW_DESTINATION === "owner_dm" ? ["users:read.email"] : [])];
+const slackOwnerLookupScopes = ["users:read", "users:read.email"] as const;
+
+export function slackBotScopes(destination = process.env.SLACK_REVIEW_DESTINATION || "owner_dm") {
+  const base = ["chat:write", "incoming-webhook"];
+  // Slack requires the email scope to be requested together with users:read.
+  return destination === "owner_dm" ? [...base, ...slackOwnerLookupScopes] : base;
+}
+
+export function hasSlackOwnerLookupScopes(scopes: string) {
+  const granted = new Set(scopes.split(",").map(scope => scope.trim()));
+  return slackOwnerLookupScopes.every(scope => granted.has(scope));
+}
 export type Credentials = {
   accessToken?: string;
   refreshToken?: string;
@@ -121,7 +132,7 @@ export async function gmailExchange(
     !token.refresh_token
   )
     throw new InputError(
-      "Grant Gmail read, send, and offline access, then connect again.",
+      "Grant Gmail read and offline access, then connect again.",
     );
   const profile = await gmailProfile(token.access_token);
   return {
@@ -191,7 +202,7 @@ export async function slackExchange(code: string, redirectUri: string) {
     !token.access_token ||
     !token.team?.id ||
     !token.incoming_webhook?.channel_id ||
-    !SLACK_SCOPES.every((scope) => token.scope?.split(",").includes(scope))
+    !slackBotScopes().every((scope) => token.scope?.split(",").map(value => value.trim()).includes(scope))
   )
     throw new InputError(
       "Grant the requested Slack permissions and select a channel.",
@@ -249,7 +260,8 @@ export async function slackHealth(credentials: Credentials) {
   if (!result.ok) throw new InputError("Reconnect Slack to restore access.");
   return current;
 }
-export async function paypalVerify(clientId: string, clientSecret: string): Promise<{ access_token: string; app_id?: string }> {
+export async function paypalVerify(clientId: string, clientSecret: string): Promise<{ applicationIdentity: string; merchantIdentityVerified: false }> {
   const { paypalToken } = await import("../automation/paypal-client");
-  return { access_token: await paypalToken(clientId, clientSecret) };
+  await paypalToken(clientId, clientSecret);
+  return { applicationIdentity: paypalApplicationIdentity(clientId), merchantIdentityVerified: false };
 }

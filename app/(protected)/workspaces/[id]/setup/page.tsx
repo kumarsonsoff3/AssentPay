@@ -9,6 +9,7 @@ import { integrationSummaries } from "@/lib/integrations/server";
 import { providerReady } from "@/lib/integrations/providers";
 import { WorkspaceShell } from "@/components/onboarding/workspace-shell";
 import { SetupWizard } from "@/components/onboarding/setup-wizard";
+import { getRegionalOptions } from "@/lib/workspaces/regions";
 export const metadata: Metadata = {
   title: "Set up your workspace | AssentPay",
   robots: { index: false, follow: false },
@@ -45,6 +46,7 @@ async function Setup(props: Props) {
     >
       <SetupWizard
         workspace={workspace}
+        regionalOptions={getRegionalOptions()}
         initialStep={
           typeof params.step === "string" && /^[0-3]$/.test(params.step)
             ? Number(params.step)

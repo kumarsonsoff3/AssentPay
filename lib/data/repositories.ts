@@ -81,7 +81,11 @@ export class WorkspaceRepository {
       throw e;
     }
   }
-  async create(workspaceId: string, profile: ProfileRecord) {
+  async create(
+    workspaceId: string,
+    profile: ProfileRecord,
+    initialize?: (db: TablesDB, tx: string) => Promise<unknown>,
+  ) {
     validId(workspaceId);
     await currentOperation().commit(async (db, tx) => {
       await this.authorize(workspaceId, ["owner"]);
@@ -102,6 +106,7 @@ export class WorkspaceRepository {
         workspaceId,
         nonce(),
       );
+      await initialize?.(db, tx);
     });
   }
   async update(

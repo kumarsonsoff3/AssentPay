@@ -7,7 +7,7 @@ import { withStorageOperation } from "@/lib/data/coordinator";
 import { workspaceAccess, workspaceStore } from "@/lib/workspaces/server";
 import { InputError } from "@/lib/workspaces/validation";
 import { invokeIntegrationFunction } from "./function-client";
-import { GMAIL_SCOPES, SLACK_SCOPES } from "./providers";
+import { GMAIL_SCOPES, slackBotScopes } from "./providers";
 export type { IntegrationRecord } from "./records";
 export { connectionId } from "./records";
 export type OAuthState = {
@@ -80,7 +80,7 @@ export async function beginOAuth(
       redirect_uri: redirectUri,
       state,
       scope:
-        provider === "gmail" ? GMAIL_SCOPES.join(" ") : SLACK_SCOPES.join(","),
+        provider === "gmail" ? GMAIL_SCOPES.join(" ") : slackBotScopes().join(","),
       ...(provider === "gmail"
         ? {
             response_type: "code",

@@ -5,7 +5,7 @@ import { InputError } from "../workspaces/validation";
 import { gmailRequest } from "./gmail-client";
 import { gmailCredentials, type GuardedCommit } from "./gmail-sync";
 import { documentBucketId, maximumDocumentSize } from "./schema";
-import { optionalRow, params, stableId, type Job } from "./store";
+import { enqueue, optionalRow, params, stableId, type Job } from "./store";
 const extensions: Record<string, string[]> = {
   pdf: ["application/pdf"],
   txt: ["text/plain"],
@@ -31,7 +31,7 @@ export function validateDocument(
     );
 }
 export async function importDocument(job: Job, commit: GuardedCommit) {
-  const { documentId } = JSON.parse(job.payloadJson),
+  const { documentId, analysisMessageId } = JSON.parse(job.payloadJson),
     doc = await optionalRow("documents", documentId);
   if (
     !doc ||
@@ -39,7 +39,10 @@ export async function importDocument(job: Job, commit: GuardedCommit) {
     doc.connectionVersion !== job.connectionVersion
   )
     throw new InputError("Document not found.", 404);
-  if (doc.status === "stored") return;
+  if (doc.status === "stored") {
+    if (analysisMessageId) await commit((db, tx) => enqueue({ ...job, kind: "financial-analyze", key: analysisMessageId, payload: { messageId: analysisMessageId } }, db, tx));
+    return;
+  }
   validateDocument(doc.filename, doc.mimeType, doc.size);
   const { token } = await gmailCredentials(job),
     attachment = await gmailRequest<{ data: string; size: number }>(
@@ -90,5 +93,6 @@ export async function importDocument(job: Job, commit: GuardedCommit) {
       ...params("documents", doc.$id, tx),
       data: { fileId, status: "stored" },
     });
+    if (analysisMessageId) await enqueue({ ...job, kind: "financial-analyze", key: analysisMessageId, payload: { messageId: analysisMessageId } }, db, tx);
   });
 }

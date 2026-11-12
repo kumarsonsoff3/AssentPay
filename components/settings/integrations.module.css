@@ -42,3 +42,8 @@
 @media(max-width:1150px) { .grid { grid-template-columns:1fr; } }
 @media(max-width:650px) { .sectionHeading { padding:22px; flex-wrap:wrap; gap:16px; }.sectionHeading h2 { font-size:19px !important; }.cardHeader { padding:20px; flex-wrap:wrap; }.cardHeader .status { margin-left:60px; }.cardBody { padding:20px; }.cardFooter { padding:16px 20px; }.groupHeading p { font-size:10px; }.securityNote { padding:17px; }.dialog { padding:25px 22px; }.dialog h2 { font-size:21px; }.dialogActions { flex-wrap:wrap; }.dialogActions button { flex:1; } }
 @media(prefers-reduced-motion:no-preference) { .primary,.secondary,.disconnect { transition:background .16s,color .16s; } }
+
+.card { border-radius: 20px; box-shadow: 0 2px 8px #152b4d06; }
+.cardHeader h3 { color: #172a49; font-size: 17px; }
+.description { color: #52627c; font-size: 13px; line-height: 1.65; }
+.cardFooter :is(button, a) { min-height: 44px; }

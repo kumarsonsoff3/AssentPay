@@ -29,7 +29,7 @@ import { sections, sectionHref } from "@/lib/dashboard/navigation";
 import styles from "./dashboard.module.css";
 type NavigationProps = { workspaceId?: string; ready?: boolean; selectBeforeNavigation?: boolean };
 
-export function MobileDashboardNavigation(props: NavigationProps) {
+export function MobileDashboardNavigation({ pageTitle, ...props }: NavigationProps & { pageTitle?: string }) {
   return (
     <details
       className={styles.mobileMenu}
@@ -40,7 +40,8 @@ export function MobileDashboardNavigation(props: NavigationProps) {
     >
       <summary>
         <LayoutGrid size={16} />
-        Workspace menu
+        <span>Workspace menu <strong>{pageTitle || <DashboardBreadcrumb />}</strong></span>
+        <ChevronDown size={15} className={styles.mobileChevron} />
       </summary>
       <DashboardNavigation {...props} />
     </details>
@@ -83,7 +84,7 @@ export function DashboardNavigation({ workspaceId, ready = true, selectBeforeNav
     }
     return <Link key={item.id} href={href} aria-current={path === href ? "page" : undefined}>{content}</Link>;
   }
-  const settingsPage = path.startsWith(`/workspaces/${workspaceId}/settings`) || sections.some((item) => item.group === "manage" && item.id !== "notifications" && sectionHref(item.id) === path);
+  const settingsPage = path.startsWith(`/workspaces/${workspaceId}/settings`) || sections.some((item) => item.group === "manage" && sectionHref(item.id) === path);
   return (
     <nav aria-label="Workspace navigation" className={styles.navigation}>
       {workspaceId && (!ready || path === `/workspaces/${workspaceId}/setup`) && (
@@ -101,7 +102,7 @@ export function DashboardNavigation({ workspaceId, ready = true, selectBeforeNav
         <summary data-active={settingsPage || undefined}><Settings2 size={17} /><span>Workspace settings</span><ChevronDown size={15} className={styles.settingsChevron} /></summary>
         <div className={styles.settingsLinks}>
           {workspaceId && <Link href={`/workspaces/${workspaceId}/settings/organization`} aria-current={path === `/workspaces/${workspaceId}/settings/organization` ? "page" : undefined}><Building2 size={17} /><span>Organization name</span></Link>}
-          {sections.filter((item) => item.group === "manage" && item.id !== "notifications").sort((a, b) => Number(b.id === "settings") - Number(a.id === "settings")).map(navigationItem)}
+          {sections.filter((item) => item.group === "manage").sort((a, b) => Number(b.id === "settings") - Number(a.id === "settings")).map(navigationItem)}
           {workspaceId && <Link href={`/workspaces/${workspaceId}/settings/danger-zone`} aria-current={path === `/workspaces/${workspaceId}/settings/danger-zone` ? "page" : undefined}><Trash2 size={17} /><span>Danger zone</span></Link>}
         </div>
       </details>

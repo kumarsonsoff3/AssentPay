@@ -49,11 +49,11 @@ export function DashboardHome({
       label: "Received messages",
       value: operations.messageCount,
       icon: Coins,
-      note: "Stored workspace communications",
+      note: "Stored financial communications",
       tone: "blue",
     },
     {
-      label: "Invoice drafts",
+      label: "Unsent invoice drafts",
       value: operations.draftCount,
       icon: FileText,
       note: "Created in PayPal sandbox",
@@ -110,45 +110,18 @@ export function DashboardHome({
           <PanelHeading
             title="Cash flow overview"
             detail={workspace.currency}
-            href="/dashboard/analytics"
+            href="/dashboard/invoices"
           />
-          <div className={styles.chartLegend}>
-            <span>
-              <i />
-              Collected
-            </span>
-            <span>
-              <i />
-              Outstanding
-            </span>
-            <span>
-              <i />
-              Upcoming
-            </span>
-          </div>
-          <div className={styles.chartEmpty}>
-            <div className={styles.chartLines} aria-hidden="true">
-              {[1, 2, 3, 4].map((i) => (
-                <i key={i} />
-              ))}
-            </div>
-            <div>
-              <span className={styles.emptyIcon}>
-                <Coins size={23} />
-              </span>
-              <h3>A clearer picture starts here.</h3>
-              <p>
-                Your verified invoices and payments will bring this chart to
-                life.
-              </p>
-              <Link className={styles.textLink} href="/dashboard/invoices">
-                Explore invoices <ArrowUpRight size={14} />
-              </Link>
-            </div>
-          </div>
+          {operations.cashFlow.currencies.length ? <div className={styles.tableWrap}>
+            <table>
+              <caption className="sr-only">Sandbox invoice face values by currency, all time</caption>
+              <thead><tr><th>Currency</th><th>Verified paid</th><th>Open invoices</th><th>Unsent drafts</th></tr></thead>
+              <tbody>{operations.cashFlow.currencies.map(item => <tr key={item.currency}><th scope="row">{item.currency}</th><td>{item.collected}</td><td>{item.outstanding}</td><td>{item.drafts}</td></tr>)}</tbody>
+            </table>
+          </div> : <EmptyState compact title="No verified invoice values yet" description="Approved sandbox invoices appear here after provider verification." href="/dashboard/invoices" action="Explore invoices" />}
           <div className={styles.panelFoot}>
             <ShieldCheck size={14} />
-            No sample transactions. Your workspace data stays yours.
+            <span>All-time sandbox invoice face values, not cash or bank balances. Open invoices exclude partial payments. {operations.cashFlow.excluded > 0 ? `${operations.cashFlow.excluded} uncertain, partial, manual, refunded or unverified records excluded. ` : ""}{operations.cashFlow.partial ? "Partial summary: first 1,000 records only." : "Currencies are not combined."}</span>
           </div>
         </section>
         <section className={`${styles.panel} ${styles.overviewReview}`}>
@@ -171,7 +144,7 @@ export function DashboardHome({
                 </tr>
               </thead>
               <tbody>
-                {operations.review.length ? operations.review.map((item) => <tr key={item.id}><td><Link href="/dashboard/approvals">Review proposal</Link></td><td>{item.counterparty}</td><td>{item.currency} {item.amount || "Uncertain"}</td><td>{item.status.replaceAll("_", " ")}</td></tr>) : <tr>
+                {operations.review.length ? operations.review.map((item) => <tr key={item.id}><td><Link href={"/dashboard/approvals?workflow=" + encodeURIComponent(item.id)}>Review proposal</Link></td><td>{item.counterparty}</td><td>{item.currency} {item.amount || "Uncertain"}</td><td>{item.status.replaceAll("_", " ")}</td></tr>) : <tr>
                   <td colSpan={4}>
                     <EmptyState
                       compact
@@ -190,11 +163,16 @@ export function DashboardHome({
             detail="Workspace memory"
             href="/dashboard/memory"
           />
-          <EmptyState
+          {operations.memories.length ? <div className={styles.tableWrap}><table>
+            <caption className="sr-only">Active workspace context, not financial evidence</caption>
+            <thead><tr><th>Context</th><th>Reference</th><th>Expires</th></tr></thead>
+            <tbody>{operations.memories.map(item => <tr key={item.id}><td><Link href="/dashboard/memory">{item.counterparty}</Link></td><td>{item.reference || "Not specified"}</td><td>{new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: workspace.timezone }).format(new Date(item.expiresAt))}</td></tr>)}</tbody>
+          </table><p className={styles.panelFoot}>Context only, never payment authority. Paused, forgotten and expired memories are excluded.</p></div> : <EmptyState
             compact
-            title="The details won’t get lost"
-            description="Review extracted workspace context, source references, and expiry dates. You can forget incorrect facts in Memory."
-          />
+            title="No active memory highlights"
+            description="Review extracted workspace context, source references, and expiry dates. You can correct or forget facts in Memory."
+          />}
+
         </section>
         </div>
         <div className={styles.overviewColumn}>
@@ -256,7 +234,7 @@ export function DashboardHome({
                 <div>
                   <strong>
                     {provider === "gmail"
-                      ? "Gmail"
+                      ? operations.inbox ? "Workspace email" : "Gmail"
                       : provider === "slack"
                         ? "Slack"
                         : "PayPal"}

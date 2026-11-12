@@ -6,6 +6,7 @@ import { AppwriteException } from "node-appwrite";
 import { AuthConfigurationError, authConfig } from "@/lib/auth/config";
 import { allowAuthRequest } from "@/lib/auth/rate-limit";
 import { InputError } from "./validation";
+import { isTransactionConflict } from "@/lib/errors";
 import {
   CleanupBusyError,
   StorageMaintenanceError,
@@ -28,6 +29,8 @@ export function rateLimit(action: string, userId: string, limit = 30) {
     );
 }
 export function apiError(error: unknown) {
+  if (isTransactionConflict(error))
+    return json({ error: "Another workspace update was in progress. Please try again.", code: "TRANSACTION_CONFLICT" }, 409);
   if (error instanceof CleanupBusyError) return json({ error: error.message, code: "CLEANUP_BUSY" }, 409);
   if (error instanceof StorageMaintenanceError) {
     const response = json({ error: error.message, code: error.code }, 503);
@@ -51,8 +54,10 @@ export function apiError(error: unknown) {
         { error: "Too many requests. Please wait a moment, then try again." },
         429,
       );
+    if (error.type === "team_invite_already_exists")
+      return json({ error: "This person already belongs to the workspace or has a pending invitation." }, 409);
     if (error.code === 409)
-      return json({ error: "This record or invitation already exists." }, 409);
+      return json({ error: "This update conflicts with an existing record. Refresh and try again." }, 409);
     if (error.code === 401)
       return json({ error: "Your session expired. Sign in again." }, 401);
     if (error.code === 403)

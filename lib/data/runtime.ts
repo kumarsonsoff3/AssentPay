@@ -50,9 +50,13 @@ export class RuntimeStore {
     await this.ready();
     return this.profiles.get(workspaceId);
   }
-  async createProfile(workspaceId: string, profile: ProfileRecord) {
+  async createProfile(
+    workspaceId: string,
+    profile: ProfileRecord,
+    initialize?: (db: TablesDB, tx: string) => Promise<unknown>,
+  ) {
     await this.writable();
-    return this.profiles.create(workspaceId, profile);
+    return this.profiles.create(workspaceId, profile, initialize);
   }
   async updateProfile(
     workspaceId: string,

@@ -7,18 +7,25 @@
       "name": "AssentPay private integration runtime",
       "runtime": "node-22",
       "execute": [],
-      "events": [],
-      "schedule": "",
+      "events": [
+        "tablesdb.assentpay.tables.integrations.rows.*.create",
+        "tablesdb.assentpay.tables.integrations.rows.*.update",
+        "tablesdb.assentpay.tables.automation_jobs.rows.*.create",
+        "tablesdb.assentpay.tables.automation_jobs.rows.*.update"
+      ],
+      "schedule": "* * * * *",
       "timeout": 120,
       "enabled": true,
       "logging": false,
       "entrypoint": "index.js",
-      "commands": "npm install --omit=dev --ignore-scripts",
+      "commands": "npm ci --omit=dev --include=optional --ignore-scripts && node verify-runtime.mjs",
       "scopes": [
         "rows.read",
         "rows.write",
         "teams.read",
-        "users.read"
+        "users.read",
+        "files.read",
+        "files.write"
       ],
       "path": ".function-build/integration-runtime"
     }

@@ -1,3 +1,6 @@
+import { sendReviewView } from './paypal-send-view';
+import { sendId } from './paypal-send';
+import { memoryView } from "./memory";
 import "server-only";
 import { Query } from "node-appwrite";
 import { dataDatabase } from "../data/client";
@@ -32,7 +35,8 @@ export async function readResources(
   if (cursor) validId(cursor);
   if (workflowId) {
     validId(workflowId);
-    if (resource !== "workflows") throw new InputError("Invalid review resource.");
+    if (resource !== "workflows")
+      throw new InputError("Invalid review resource.");
   }
   const queries = [
     Query.limit(50),
@@ -51,22 +55,56 @@ export async function readResources(
     if (!version) return { items: [], nextCursor: null };
     queries.push(Query.equal("connectionVersion", version));
   }
-  if (resource === "memory") {
-    queries.push(Query.equal("status", "active"), Query.greaterThan("expiresAt", new Date().toISOString()));
-  }
   if (resource === "messages") queries.push(Query.equal("financial", true));
   const page = await dataDatabase().listRows({
     ...params(tables[resource]),
     queries: [Query.equal("workspaceId", workspaceId), ...queries],
   });
+  const isOwner = resource === "workflows" && page.rows.length > 0
+    && (await (await import("../workspaces/server")).workspaceAccess(workspaceId, userId)).role === "owner";
   const items = await Promise.all(
-    page.rows.map(async (row) => {
+    page.rows.map(async row => {
       const base = { id: row.$id, updatedAt: row.$updatedAt };
       switch (resource) {
-        case "deliveries": return { ...base, channel: row.channel, status: row.status, workflowId: row.workflowId };
-        case "workflows": return { ...base, messageId: row.messageId, status: row.status, action: row.action, counterparty: row.counterparty, amount: row.amount, currency: row.currency, providerId: row.providerId, proposal: JSON.parse(row.proposalJson), proposalHash: (await import("./intelligence")).proposalHash(row.proposalJson) };
-        case "analyses": return { ...base, messageId: row.messageId, category: row.category, status: row.status, result: JSON.parse(row.resultJson) };
-        case "memory": return { ...base, sourceId: row.sourceId, status: row.status, expiresAt: row.expiresAt, facts: JSON.parse(row.factsJson) };
+        case "deliveries":
+          return {
+            ...base,
+            channel: row.channel,
+            status: row.status,
+            workflowId: row.workflowId,
+          };
+        case "workflows": {
+          const id = sendId(workspaceId, row.$id);
+          const [sendReview, view] = isOwner
+            ? await Promise.all([optionalRow("paypal_send_reviews", id), optionalRow("paypal_invoice_views", id)])
+            : [null, null];
+          return {
+            ...base,
+            messageId: row.messageId,
+            status: row.status,
+            action: row.action,
+            counterparty: row.counterparty,
+            amount: row.amount,
+            currency: row.currency,
+            providerId: row.providerId,
+            sendReview: sendReviewView(sendReview, workspaceId, isOwner),
+            paymentLink: view?.workspaceId === workspaceId && view.providerId === row.providerId ? view.paymentLink : null,
+            proposal: JSON.parse(row.proposalJson),
+            proposalHash: (await import("./intelligence")).proposalHash(
+              row.proposalJson,
+            ),
+          };
+        }
+        case "analyses":
+          return {
+            ...base,
+            messageId: row.messageId,
+            category: row.category,
+            status: row.status,
+            result: JSON.parse(row.resultJson),
+          };
+        case "memory":
+          return memoryView(row);
         case "messages": {
           const content = JSON.parse(row.contentJson);
           return {
@@ -110,10 +148,21 @@ export async function readResources(
           let subject: string | null = null;
           if (row.kind === "financial-analyze") {
             const payload = JSON.parse(row.payloadJson);
-            const mail = typeof payload.messageId === "string" ? await optionalRow("mail_messages", payload.messageId) : null;
-            if (mail?.workspaceId === workspaceId) subject = String(mail.subject);
+            const mail =
+              typeof payload.messageId === "string"
+                ? await optionalRow("mail_messages", payload.messageId)
+                : null;
+            if (mail?.workspaceId === workspaceId)
+              subject = String(mail.subject);
           }
-          const state = processingState({ kind: row.kind, status: row.status, attempts: Number(row.attempts), createdAt: row.$createdAt, errorCode: row.errorCode });
+          const state = processingState({
+            kind: row.kind,
+            status: row.status,
+            attempts: Number(row.attempts),
+            createdAt: row.$createdAt,
+            nextAttemptAt: row.nextAttemptAt,
+            errorCode: row.errorCode,
+          });
           return {
             ...base,
             kind: row.kind,
@@ -122,7 +171,10 @@ export async function readResources(
             nextAttemptAt: row.nextAttemptAt,
             errorCode: row.errorCode,
             createdAt: row.$createdAt,
-            waitingTooLong: row.status === "queued" && Number(row.attempts) === 0 && Date.now() - Date.parse(row.$createdAt) > 5 * 60000,
+            waitingTooLong:
+              row.status === "queued" &&
+              Number(row.attempts) === 0 &&
+              Date.now() - Date.parse(row.$createdAt) > 5 * 60000,
             subject,
             processing: state,
           };

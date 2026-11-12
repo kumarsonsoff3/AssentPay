@@ -47,8 +47,11 @@ next-env.d.ts
 .agent/
 playwright.config.ts
 postman/
-/scripts/
-/tests/
+
+# Local provider verification records
+/docs/
+scripts
+tests
 
 # Local-only container setup
 /.dockerignore

@@ -1,3 +1,5 @@
+import { prepareInvoiceSend, executeInvoiceSend } from './paypal-send';
+import { deliverSlackCard, slackDeliveryReference } from './slack-card-delivery';
 import { Query } from "node-appwrite";
 import { randomBytes } from "node:crypto";
 import { dataClient, dataDatabase } from "../data/client";
@@ -20,9 +22,11 @@ import { deliverFinancialSlack, SlackRateLimitError } from "./financial-slack";
 import { maintainFinancialData } from "./maintenance";
 import { ingestResend, ResendReceivingError } from "./resend";
 import { analyzeMessage } from "./intelligence";
-import { executeFinancialAction, reconcilePaypal, deliverWorkflowNotification } from "./workflows";
+import { verifyAndBindPaypal, executeFinancialAction, reconcilePayout, reconcilePaypal, deliverWorkflowNotification } from "./workflows";
 export class SupersededJob extends Error {}
 async function validConnection(job: Job, db = dataDatabase(), tx?: string) {
+  // Disabling controlled Gmail must also stop work queued before the flag changed.
+  if (["gmail-sync", "document-import"].includes(job.kind) && process.env.GMAIL_OAUTH_ENABLED !== "true") throw new SupersededJob();
   if (["resend-ingest", "financial-analyze", "workflow-notify", "financial-slack-notify"].includes(job.kind)) {
     const endpoint = await optionalRow("inbound_endpoints", job.integrationId, db, tx);
     if (endpoint) {
@@ -91,8 +95,14 @@ export async function processJob(id: string) {
     if (job.kind === "resend-ingest") await ingestResend(job, commit);
     else if (job.kind === "financial-analyze") await analyzeMessage(job, commit);
     else if (job.kind === "paypal-execute") await executeFinancialAction(job, commit);
+    else if (job.kind === "paypal-send-review") await prepareInvoiceSend(job, commit);
+    else if (job.kind === "paypal-send") await executeInvoiceSend(job, commit);
+    else if (job.kind === "paypal-send-recover") await executeInvoiceSend(job, commit, true);
+    else if (job.kind === "paypal-recover") await verifyAndBindPaypal(job, commit);
+    else if (job.kind === "paypal-payout-check") more = await reconcilePayout(job, commit);
     else if (job.kind === "paypal-reconcile") await reconcilePaypal(job, commit);
-    else if (job.kind === "financial-slack-notify") await deliverFinancialSlack(job, commit);
+    else if (["financial-slack-notify", "workflow-reminder"].includes(job.kind)) await deliverFinancialSlack(job, commit);
+    else if (job.kind === "slack-card-delivery") await deliverSlackCard(job, commit);
     else if (job.kind === "workflow-notify") await deliverWorkflowNotification(job, commit);
     else if (job.kind === "gmail-sync") more = await syncGmail(job, commit);
     else if (job.kind === "document-import") await importDocument(job, commit);
@@ -141,7 +151,7 @@ export async function processJob(id: string) {
       (error instanceof InputError && error.status === 403);
     const permanent =
       (error instanceof InputError &&
-        [400, 401, 403, 404, 413].includes(error.status)) ||
+        ([400, 401, 403, 404, 413].includes(error.status) || error.code?.startsWith("INVOICE_OBLIGATION_"))) ||
       (error instanceof ResendReceivingError && [400, 401, 403, 404, 413].includes(error.status)) ||
       (error instanceof GmailError && [400, 401, 403].includes(error.status));
     const failed = !!error && !cancelled && (permanent || job.attempts >= 5);
@@ -160,7 +170,7 @@ export async function processJob(id: string) {
           Math.min(3600000, 15000 * 2 ** Math.min(job.attempts, 8)) +
             Math.floor(Math.random() * 3000),
         )
-      : 0;
+      : more && job.kind === "paypal-payout-check" ? 5 * 60_000 : 0;
     const errorCode = error
       ? cancelled
         ? "ACCESS_OR_CONNECTION_CHANGED"
@@ -174,11 +184,27 @@ export async function processJob(id: string) {
             ? "INVALID_REQUEST_OR_CREDENTIALS"
             : "TEMPORARY_FAILURE"
       : "";
+    if (job.kind === "document-import" && status === "failed") {
+      const payload = JSON.parse(job.payloadJson);
+      const doc = await optionalRow("documents", payload.documentId, db, tx);
+      if (doc?.workspaceId === job.workspaceId && doc.connectionVersion === job.connectionVersion) {
+        await db.updateRow({ ...params("documents", doc.$id, tx), data: { status: "review_required" } });
+        if (payload.analysisMessageId) await enqueue({ ...job, kind: "financial-analyze", key: payload.analysisMessageId, payload: { messageId: payload.analysisMessageId }, force: true }, db, tx);
+      }
+    }
+    if (job.kind === "slack-card-delivery" && ["cancelled", "failed"].includes(status)) {
+      const reference = JSON.parse(slackDeliveryReference(job.payloadJson));
+      const token = reference.tokenId ? await optionalRow("slack_action_tokens", reference.tokenId, db, tx) : null;
+      if (token?.workspaceId === job.workspaceId && token.ownerId === job.requestedBy && token.connectionVersion === job.connectionVersion && ["queued", "sending"].includes(token.status)) {
+        await db.updateRow({ ...params("slack_action_tokens", token.$id, tx), data: { status: token.status === "sending" ? "unknown" : status, recipientEmail: "" } });
+      }
+    }
     await db.updateRow({
       ...params("automation_jobs", id, tx),
       data: {
         status,
         errorCode,
+        ...(job.kind === "slack-card-delivery" && ["completed", "cancelled", "failed"].includes(status) ? { payloadJson: slackDeliveryReference(job.payloadJson) } : {}),
         attempts: !error ? 0 : job.attempts,
         nextAttemptAt: new Date(Date.now() + delay).toISOString(),
         leaseToken: "",
@@ -259,13 +285,14 @@ export async function scheduleIntegrations() {
 }
 export function dispatchKinds(options: { inboxOnly?: boolean; analysisOnly?: boolean; triageOnly?: boolean }): Job["kind"][] | undefined {
   if ([options.inboxOnly, options.analysisOnly, options.triageOnly].filter(Boolean).length > 1) throw new InputError("Choose one worker mode.");
-  return options.inboxOnly ? ["resend-ingest"] : options.analysisOnly ? ["resend-ingest", "financial-analyze"] : options.triageOnly ? ["resend-ingest", "financial-analyze", "financial-slack-notify"] : undefined;
+  return options.inboxOnly ? ["resend-ingest"] : options.analysisOnly ? ["resend-ingest", "financial-analyze"] : options.triageOnly ? ["resend-ingest", "financial-analyze", "financial-slack-notify", "slack-card-delivery", "workflow-reminder"] : undefined;
 }
 export async function dispatchAutomation(options: { inboxOnly?: boolean; analysisOnly?: boolean; triageOnly?: boolean } = {}) {
   const kinds = dispatchKinds(options);
   return withStorageOperation("worker", async () => {
+    let maintenance;
     if (!kinds) {
-      await maintainFinancialData();
+      maintenance = await maintainFinancialData();
       await scheduleIntegrations();
     }
     const now = new Date().toISOString(),
@@ -297,6 +324,6 @@ export async function dispatchAutomation(options: { inboxOnly?: boolean; analysi
       await processJob(job.$id);
       processed++;
     }
-    return { status: "dispatched", processed };
+    return { status: "dispatched", processed, ...(maintenance ? { maintenance } : {}) };
   });
 }

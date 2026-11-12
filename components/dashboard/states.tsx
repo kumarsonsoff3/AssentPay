@@ -54,3 +54,11 @@ export function DashboardLoading() {
     </div>
   );
 }
+
+
+export function ResourceLoading({ title }: { title: string }) {
+  return <div className={styles.resourceLoading} role="status">
+    <span>{title}</span>
+    <div aria-hidden="true" /><div aria-hidden="true" /><div aria-hidden="true" />
+  </div>;
+}

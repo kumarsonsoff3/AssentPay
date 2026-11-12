@@ -21,9 +21,9 @@ export function RenameWorkspace({ id, name, onSaved, compact = false }: { id: st
     catch (error) { setError((error as Error).message); }
     finally { pending.current = false; setBusy(false); }
   }
-  return <div className={compact ? styles.compactForm : styles.card}>
-    {!compact && <div className={styles.cardHeader}><span className={styles.avatar}><Building2 size={23}/></span><div><h3 className={styles.identityName}>{saved}</h3><p>Organization identity</p></div></div>}
-    <form className={styles.cardForm} onSubmit={save}>
+  return <div className={compact ? styles.compactForm : `${styles.card} ${styles.settingsEditor}`}>
+    {!compact && <div className={styles.cardHeader}><span className={styles.avatar}><Building2 size={23}/></span><div><p>Current display name</p><h3 className={styles.identityName}>{saved}</h3></div></div>}
+    <form className={styles.cardForm} action="/api/forms/unavailable" method="post" onSubmit={save}>
       <div className={styles.formBody}><fieldset disabled={busy}><label>Display name<input name="name" value={value} onChange={(event) => {setValue(event.target.value);}} required maxLength={128} autoComplete="organization"/><span className={styles.fieldHint}>Shown in your workspace switcher and throughout AssentPay.</span></label></fieldset></div>
       {error && <InlineFeedback>{error}</InlineFeedback>}
       <div className={styles.formFooter}><span className={styles.footerNote}>Visible to everyone in your organization</span><div className={styles.footerActions}>{changed && <button type="button" className={styles.ghostButton} disabled={busy} onClick={() => {setValue(saved);setError("");}}>Discard</button>}<button className={styles.button} disabled={busy || !changed || !value.trim()}>{busy && <Spinner size={14}/>} {busy ? "Saving…" : "Save changes"}</button></div></div>

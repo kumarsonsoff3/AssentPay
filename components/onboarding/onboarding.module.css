@@ -157,8 +157,8 @@
   font-weight: 500;
   color: #354665;
 }
-.app input:not([type="checkbox"]),
-.app select {
+.app input:not([type="checkbox"], :where([data-embedded-studio] *)),
+.app select:not(:where([data-embedded-studio] *)) {
   border: 1px solid #dce3ee;
   background: white;
   border-radius: 7px;
@@ -170,10 +170,10 @@
   min-height: 44px;
   outline-offset: 3px;
 }
-.app input::placeholder {
+.app input:not(:where([data-embedded-studio] *))::placeholder {
   color: #64748b;
 }
-.app button:disabled {
+.app button:disabled:not(:where([data-embedded-studio] *)) {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -391,8 +391,23 @@
 }
 .fieldGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 22px;
+}
+.fullWidthField {
+  grid-column: 1 / -1;
+}
+.regionalPreferences {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e1e8f4;
+}
+.regionalPreferences h3 {
+  margin: 0 0 14px;
+  color: #172a49;
+  font-size: 13px;
+  font-weight: 650;
 }
 .preferenceBox {
   padding: 22px;
@@ -641,30 +656,30 @@
 }
 .memberList {
   margin-top: 25px;
+  container-type: inline-size;
 }
 .member {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid #e8edf5;
-  padding: 18px 0;
+  padding: 12px 0;
 }
-.member > div {
+.memberIdentity {
   min-width: 0;
-  flex: 1;
+  overflow-wrap: anywhere;
 }
-.member strong {
+.memberIdentity strong {
+  font-size: 13px;
+  font-weight: 600;
+  display: block;
+}
+.memberIdentity small {
   font-size: 12px;
-  font-weight: 500;
-  display: block;
-  overflow-wrap: anywhere;
-}
-.member small {
-  font-size: 10px;
   color: #64748b;
-  margin-top: 5px;
+  margin-top: 2px;
   display: block;
-  overflow-wrap: anywhere;
 }
 .avatar {
   width: 35px;
@@ -678,15 +693,31 @@
   font-size: 12px;
   border-radius: 50%;
 }
-.member select {
-  width: 100px;
-  min-height: 36px;
-  font-size: 10px;
-  padding: 8px;
+.memberActions {
+  display: grid;
+  grid-template-columns: 7rem auto;
+  align-items: center;
+  justify-content: start;
+  gap: 8px;
 }
-.member .textButton {
-  font-size: 9px;
-  padding: 2px;
+.memberActions .textButton {
+  font-size: 12px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+@container (max-width: 28rem) {
+  .member {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 8px;
+  }
+  .memberActions {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 7rem) auto;
+  }
+  .member > .roleTag {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 .roleTag {
   font-size: 10px;
@@ -1928,8 +1959,8 @@
 .fieldGrid {
   gap: 20px;
 }
-.app input:not([type="checkbox"]),
-.app select {
+.app input:not([type="checkbox"], :where([data-embedded-studio] *)),
+.app select:not(:where([data-embedded-studio] *)) {
   border-radius: 8px;
   font-size: 12px;
   min-height: 42px;
@@ -2363,12 +2394,6 @@
   }
   .inviteForm button {
     grid-column: 1/-1;
-  }
-  .member {
-    flex-wrap: wrap;
-  }
-  .member > div {
-    min-width: calc(100% - 55px);
   }
   .metricGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));

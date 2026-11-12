@@ -8,27 +8,34 @@
     "build:webpack": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import tsx --test tests/*.test.ts",
     "test:settings": "node --import tsx --test tests/settings.test.ts",
     "typecheck": "tsc --noEmit",
     "dev:trigger": "node scripts/trigger-dev.mjs",
-    "db:provision": "node --env-file=.env --import tsx scripts/migrate-appwrite.mts --cli",
+    "db:provision": "npm run db:plan",
     "db:plan": "node --import tsx scripts/migrate-appwrite.mts --offline",
     "db:migrate": "node --env-file=.env --import tsx scripts/migrate-appwrite.mts",
     "db:backfill": "node --env-file=.env --import tsx scripts/backfill-appwrite.mts",
     "db:cutover": "node --env-file=.env --import tsx scripts/storage-cutover.mts",
     "function:build": "node scripts/build-integration-function.mjs",
+    "function:verify": "node .function-build/integration-runtime/verify-runtime.mjs",
     "function:deploy": "node --env-file=.env --import tsx scripts/deploy-integration-function.mts",
     "db:backfill:inboxes": "node --env-file=.env --import tsx scripts/backfill-inboxes.mts",
     "worker:financial": "node --env-file=.env.worker --import tsx scripts/financial-worker.mts",
+    "retention:inspect": "node --env-file=.env --import tsx scripts/inspect-financial-retention.mts",
+    "security:inspect": "node --env-file=.env --import tsx scripts/inspect-financial-acls.mts",
     "test:security": "node --import tsx --test tests/security.test.ts",
     "worker:inbox": "node --env-file=.env --import tsx scripts/financial-worker.mts --inbox-only",
     "worker:analysis": "node --env-file=.env --import tsx scripts/financial-worker.mts --analysis-only",
-    "worker:triage": "node --env-file=.env --import tsx scripts/financial-worker.mts --triage-only",
-    "test": "npm run test:security && npm run test:settings"
+    "worker:triage": "node --env-file=.env --import tsx scripts/financial-worker.mts --triage-only"
   },
   "dependencies": {
     "@paypal/paypal-server-sdk": "2.5.0",
     "@trigger.dev/sdk": "^4.7.4",
+    "ag-grid-community": "36.3.0",
+    "ag-grid-react": "36.3.0",
+    "ag-studio": "3.1.0",
+    "ag-studio-react": "3.1.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.0",
     "fflate": "0.8.3",
@@ -63,6 +70,9 @@
     "ws": "^8.21.0",
     "@prisma/config": {
       "deepmerge-ts": "8.0.2"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
     },
     "@next/eslint-plugin-next": {
       "fast-glob": "npm:tinyglobby@0.2.17"

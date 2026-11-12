@@ -1,4 +1,9 @@
 "use client";
+
+import { SelectField, workspaceRoleOptions } from "@/components/controls/select-field";
+import { IndustrySelect } from "@/components/controls/industry-select";
+import { RegionalSelect } from "@/components/controls/regional-select";
+import type { RegionalOptions } from "@/lib/workspaces/regions";
 import { ToastNotice, useToast } from "@/components/feedback/toast-provider";
 import { Spinner } from "@/components/feedback/feedback";
 import { InlineFeedback } from "@/components/feedback/feedback";
@@ -78,6 +83,7 @@ const info = {
 };
 export function SetupWizard({
   workspace,
+  regionalOptions,
   integrations,
   members,
   ready,
@@ -86,6 +92,7 @@ export function SetupWizard({
   initialStep,
 }: {
   workspace: Workspace;
+  regionalOptions: RegionalOptions;
   integrations: IntegrationSummary[];
   members: Member[];
   ready: Record<Provider, boolean>;
@@ -97,6 +104,7 @@ export function SetupWizard({
   const router = useRouter(),
     [step, setStep] = useState(workspace.profileSaved ? (initialStep ?? 1) : 0),
     [busy, setBusy] = useState(false),
+    [inviteRole, setInviteRole] = useState("member"),
     [error, setError] = useState(
       connectionResult === "failed"
         ? "The connection could not be completed. Check the callback settings and try again."
@@ -157,9 +165,10 @@ export function SetupWizard({
   async function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    await perform(`${api}/invite`, Object.fromEntries(new FormData(form)), () =>
-      form.reset(),
-    );
+    await perform(`${api}/invite`, Object.fromEntries(new FormData(form)), () => {
+      form.reset();
+      setInviteRole("member");
+    });
   }
   async function paypal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -277,68 +286,52 @@ export function SetupWizard({
                     required
                     maxLength={128}
                   />
-                  <Field
-                    label="Industry"
-                    name="industry"
-                    value={workspace.industry}
-                    placeholder="e.g. Design & creative services"
-                    required
-                    maxLength={128}
-                  />
-                  <Field
-                    label="Business website"
-                    name="website"
-                    type="url"
-                    value={workspace.website}
-                    placeholder="https://yourbusiness.com"
-                    maxLength={512}
-                  />
-                  <Field
-                    label="Country code"
-                    name="country"
-                    value={workspace.country}
-                    placeholder="US, IN, GB…"
-                    required
-                    maxLength={2}
-                    pattern="[A-Za-z]{2}"
-                  />
-                  <Field
-                    label="Currency code"
-                    name="currency"
-                    value={workspace.currency}
-                    placeholder="USD, INR, GBP…"
-                    required
-                    maxLength={3}
-                    pattern="[A-Za-z]{3}"
-                  />
-                  <Field
-                    label="Timezone"
-                    name="timezone"
-                    value={workspace.timezone}
-                    placeholder="Asia/Kolkata"
-                    required
-                    maxLength={64}
-                    list="timezones"
-                  />
-                  <datalist id="timezones">
-                    {[
-                      "UTC",
-                      "Asia/Kolkata",
-                      "America/New_York",
-                      "America/Los_Angeles",
-                      "Europe/London",
-                      "Europe/Paris",
-                      "Asia/Singapore",
-                      "Australia/Sydney",
-                    ].map((zone) => (
-                      <option key={zone} value={zone} />
-                    ))}
-                  </datalist>
+                  <IndustrySelect key={workspace.industry} className={styles.field} value={workspace.industry} />
+                  <div className={styles.fullWidthField}>
+                    <Field
+                      label="Business website"
+                      name="website"
+                      type="url"
+                      value={workspace.website}
+                      placeholder="https://yourbusiness.com"
+                      maxLength={512}
+                    />
+                  </div>
+                </div>
+                <div className={styles.regionalPreferences}>
+                  <h3>Regional preferences</h3>
+                  <div className={styles.fieldGrid}>
+                    <RegionalSelect
+                      className={styles.field}
+                      label="Country or region"
+                      name="country"
+                      value={workspace.country}
+                      options={regionalOptions.country}
+                    />
+                    <RegionalSelect
+                      className={styles.field}
+                      label="Currency"
+                      name="currency"
+                      value={workspace.currency}
+                      options={regionalOptions.currency}
+                      hint="Default currency for workspace amounts."
+                      hintClassName={styles.note}
+                    />
+                    <RegionalSelect
+                      className={`${styles.field} ${styles.fullWidthField}`}
+                      label="Time zone"
+                      name="timezone"
+                      value={workspace.timezone}
+                      options={regionalOptions.timezone}
+                      hint="Used to display dates and times."
+                      hintClassName={styles.note}
+                    />
+                  </div>
                 </div>
                 <div className={styles.preferenceBox}>
                   <h3>Built around your preferences</h3>
                   <Field
-                    label={`Review threshold (${workspace.currency})`}
+                    label="Review threshold"
                     name="approvalThreshold"
                     value={String(workspace.approvalThreshold)}
                     type="number"
@@ -348,8 +341,8 @@ export function SetupWizard({
                     required
                   />
                   <p className={styles.note}>
-                    Saved for future approval rules. All financial actions will
-                    still require explicit approval.
+                    In your selected workspace currency. All financial actions
+                    will still require explicit approval.
                   </p>
                   <label className={styles.checkbox}>
                     <input
@@ -510,6 +503,10 @@ export function SetupWizard({
                                 Copy the app’s Client ID and Secret below.
                               </li>
                             </ol>
+                            <p className={styles.note}>
+                              PayPal features and transaction currencies depend on your merchant account.
+                              Your workspace preferences don’t change what PayPal supports.
+                            </p>
                             <a
                               href="https://developer.paypal.com/dashboard/applications/sandbox"
                               target="_blank"
@@ -604,11 +601,7 @@ export function SetupWizard({
                   />
                   <label>
                     Role
-                    <select name="role" defaultValue="member">
-                      <option value="admin">Admin</option>
-                      <option value="member">Member</option>
-                      <option value="viewer">Viewer</option>
-                    </select>
+                    <SelectField name="role" value={inviteRole} onValueChange={setInviteRole} options={workspaceRoleOptions} />
                   </label>
                   <button className={styles.primary} disabled={busy}>{busy && <Spinner size={15}/>} 
                     {busy ? "Sending…" : "Send invite"}
@@ -619,44 +612,29 @@ export function SetupWizard({
               <div className={styles.memberList}>
                 {members.map((member) => (
                   <div className={styles.member} key={member.id}>
-                    <span className={styles.avatar}>
-                      {(member.name || member.email || "?")
-                        .slice(0, 1)
-                        .toUpperCase()}
+                    <span className={styles.avatar} aria-hidden="true">
+                      {(member.name || member.email || (member.confirmed ? "M" : "I")).slice(0, 1).toUpperCase()}
                     </span>
-                    <div>
-                      <strong>{member.name || member.email}</strong>
-                      <small>
-                        {member.name ? member.email : ""}
-                        {!member.confirmed ? " · Invitation pending" : ""}
-                      </small>
+                    <div className={styles.memberIdentity}>
+                      <strong>{member.name || member.email || (member.confirmed ? "Workspace member" : "Invited teammate")}</strong>
+                      {member.name && member.email && <small>{member.email}</small>}
+                      {!member.confirmed && <small>Invitation pending</small>}
                     </div>
                     {owner && !member.roles.includes("owner") ? (
-                      <>
-                        <label
-                          className={styles.srOnly}
-                          htmlFor={`role-${member.id}`}
-                        >
-                          Role for {member.email}
-                        </label>
-                        <select
-                          id={`role-${member.id}`}
+                      <div className={styles.memberActions}>
+                        <SelectField
+                          aria-label={`Role for ${member.name || member.email || "invited teammate"}`}
                           value={member.roles[0] || "viewer"}
+                          options={workspaceRoleOptions}
                           disabled={busy}
-                          onChange={(event) =>
-                            void perform(`${api}/role`, {
-                              membershipId: member.id,
-                              role: event.target.value,
-                            })
+                          onValueChange={(role) =>
+                            void perform(`${api}/role`, { membershipId: member.id, role })
                           }
-                        >
-                          <option value="admin">Admin</option>
-                          <option value="member">Member</option>
-                          <option value="viewer">Viewer</option>
-                        </select>
+                        />
                         <button
                           className={styles.textButton}
                           disabled={busy}
+                          aria-label={!member.confirmed && member.email ? `Cancel invite for ${member.email}` : undefined}
                           onClick={() =>
                             void perform(`${api}/remove`, {
                               membershipId: member.id,
@@ -665,7 +643,7 @@ export function SetupWizard({
                         >{busy && <Spinner size={15}/>} 
                           {member.confirmed ? "Remove" : "Cancel invite"}
                         </button>
-                      </>
+                      </div>
                     ) : (
                       <span className={styles.roleTag}>
                         {member.roles.join(", ")}

@@ -27,6 +27,12 @@ export async function invokeIntegrationFunction(
     if (result.code === "STORAGE_MAINTENANCE")
       throw new StorageMaintenanceError();
     if (result.code === "REVISION_CONFLICT") throw new RevisionConflictError();
+    if (input.action === "automation-dispatch" && execution.responseStatusCode === 400)
+      throw new InputError(
+        "Appwrite rejected the automation-dispatch request (HTTP 400). Check that the active AssentPay Function deployment supports automation dispatch.",
+        400,
+        "AUTOMATION_DISPATCH_REJECTED",
+      );
     const status = [400, 401, 403, 409, 429, 502, 503].includes(
       execution.responseStatusCode,
     )

@@ -1,3 +1,5 @@
+import { InputError } from "../workspaces/validation";
+import { gmailMessageId } from "./financial-safety";
 import { Query } from "node-appwrite";
 import { RuntimeStore } from "../data/runtime";
 import { dataClient, dataDatabase, databaseId } from "../data/client";
@@ -31,6 +33,7 @@ type SyncState = {
   watchExpires: number;
 };
 export async function gmailCredentials(job: Job) {
+  if (process.env.GMAIL_OAUTH_ENABLED !== "true") throw new InputError("Gmail is disabled for this deployment.", 403);
   const store = new RuntimeStore(
     dataDatabase(),
     databaseId(),
@@ -184,7 +187,7 @@ export async function syncGmail(
     } catch (e) {
       if (!(e instanceof GmailError) || e.status !== 404) throw e;
     }
-    const id = stableId(job.workspaceId, job.connectionVersion, providerId);
+    const id = gmailMessageId(job.workspaceId, mailbox, providerId);
     const ignored = message?.labelIds?.some((l) =>
       ["SPAM", "TRASH", "CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL"].includes(l),
     );
@@ -225,7 +228,8 @@ export async function syncGmail(
             }),
           },
         });
-        if (!priorAnalysis) await enqueue({ ...job, kind: "financial-analyze", key: id, payload: { messageId: id } }, db, tx);
+        // Import supported attachments before classification; discovered content cannot be evidence.
+        let imports = 0;
         for (const address of [
           header(message, "from"),
           ...header(message, "to").split(",").slice(0, 10),
@@ -283,7 +287,12 @@ export async function syncGmail(
                 status: "discovered",
               },
             });
+          if (/\.(pdf|txt|docx|xlsx)$/i.test(attachment.filename || "") && (attachment.body?.size || 0) > 0 && (attachment.body?.size || 0) <= 5 * 1024 * 1024) {
+            imports++;
+            if (!priorAnalysis) await enqueue({ ...job, kind: "document-import", key: documentId, payload: { documentId, analysisMessageId: id } }, db, tx);
+          }
         }
+        if (!priorAnalysis && !imports) await enqueue({ ...job, kind: "financial-analyze", key: id, payload: { messageId: id } }, db, tx);
       }
       state.pending = state.pending.filter((p) => p !== providerId);
       await save(db, tx);

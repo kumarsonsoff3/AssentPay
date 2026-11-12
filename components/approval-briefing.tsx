@@ -1,5 +1,7 @@
 "use client";
 
+import { SelectField } from "@/components/controls/select-field";
+
 import { useState } from "react";
 import {
   CalendarDays,
@@ -147,21 +149,16 @@ export function ApprovalBriefing() {
           <UserRound className="size-3.5" aria-hidden="true" />
           Assigned owner
         </label>
-        <select
+        <SelectField
           id="briefing-owner"
           value={owner}
           disabled={invoiceClosed}
-          onChange={event => {
-            setOwner(event.target.value);
-            setResult(`Sample task assigned to ${event.target.value}.`);
+          options={owners.map(name => ({ value: name, label: name }))}
+          onValueChange={value => {
+            setOwner(value);
+            setResult(`Sample task assigned to ${value}.`);
           }}
-        >
-          {owners.map(name => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
+        />
       </div>
       <details className="briefing-source">
         <summary>
