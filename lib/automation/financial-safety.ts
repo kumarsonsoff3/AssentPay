@@ -17,21 +17,19 @@ export const financialClaimId = (workspace: string, fingerprint: string) =>
     0,
     32,
   );
+const paypalCurrencies = new Set(
+  "AUD BRL CAD CHF CNY CZK DKK EUR GBP HKD HUF ILS JPY MXN MYR NOK NZD PHP PLN SEK SGD THB TWD USD".split(" "),
+);
 export function exactAmount(value: string, currency: string) {
-  const supported = new Set(
-    "AUD BRL CAD CHF CNY CZK DKK EUR GBP HKD HUF ILS JPY MXN MYR NOK NZD PHP PLN SEK SGD THB TWD USD".split(
-      " ",
-    ),
-  );
+  if (!paypalCurrencies.has(currency)) throw new InputError(`PayPal sandbox does not support ${currency || "an unconfirmed currency"} for this action.`, 409, "PAYPAL_CURRENCY_UNSUPPORTED");
   const exponent = ["JPY", "HUF", "TWD"].includes(currency) ? 0 : 2;
   if (
-    !supported.has(currency) ||
     !/^\d{1,12}(?:\.\d{1,2})?$/.test(value) ||
     (value.split(".")[1]?.length || 0) > exponent ||
     !/[1-9]/.test(value)
   )
     throw new InputError(
-      "The amount or PayPal currency requires manual review.",
+      "Enter a positive exact amount with the decimal places supported by this currency.",
       409,
     );
   const [whole, fraction = ""] = value.split(".");
@@ -140,11 +138,11 @@ export function billingEvidenceWarnings(
     // Explicit ISO currency and adjacent decimal amount only; no inferred symbols,
     // rounded values, partial numeric matches or facts supplied solely by memory.
     const values = quote.matchAll(
-      /\b([A-Z]{3})\s+(\d+(?:\.\d+)?)(?!\w|[.,]\d)|(?<![\w.])(?<!\d,)(\d+(?:\.\d+)?)\s+([A-Z]{3})\b/g,
+      /\b([A-Z]{3})\s+((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?!\w|[.,]\d)|(?<![\w.])(?<!\d,)((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s+([A-Z]{3})\b/g,
     );
     return [...values].some(match =>
       sameFinancialValue(
-        match[2] || match[3],
+        (match[2] || match[3]).replaceAll(",", ""),
         match[1] || match[4],
         amount,
         extraction.currency || "",

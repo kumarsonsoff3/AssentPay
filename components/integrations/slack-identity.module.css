@@ -1,0 +1,14 @@
+.page { max-width: 52rem; margin: 2rem auto; padding: 0 1rem 2rem; color: #162849; }
+.stack { display: grid; gap: 1rem; margin-top: 1.25rem; }
+.card { display: grid; gap: .8rem; padding: clamp(1rem, 4vw, 1.5rem); border: 1px solid #dce5f4; border-radius: 14px; background: white; }
+.card h2 { font-size: 1.125rem; font-weight: 650; }
+.card p { color: #455a79; }
+.form { display: grid; gap: .75rem; }
+.form label { display: grid; gap: .35rem; font-weight: 600; }
+.form input { min-height: 44px; width: 100%; border: 1px solid #bfcde3; border-radius: 8px; padding: .55rem .7rem; }
+.card :is(button, a) { min-height: 44px; width: fit-content; max-width: 100%; display: inline-flex; align-items: center; padding: .5rem .8rem; border: 1px solid #cbd8ed; border-radius: 8px; color: #2447a7; font-weight: 650; }
+.card .primary { color: white; background: #254ac6; border-color: #254ac6; }
+.card :is(button, a):hover:not(:disabled) { box-shadow: 0 0 0 2px #dce6fc; }
+.card :is(button, a, input):focus-visible { outline: 2px solid #254ac6; outline-offset: 2px; }
+.card button:disabled { opacity: .55; }
+.status { font-size: .875rem; font-weight: 600; }

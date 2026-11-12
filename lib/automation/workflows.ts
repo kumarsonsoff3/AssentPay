@@ -1,8 +1,9 @@
 import { supportedBillingIntent, reconciliationState, exactAmount, digest, boundRequest, assertInvoiceMatches, billingEvidenceWarnings, type ApprovedInvoice } from "./financial-safety";
 import { randomBytes } from "node:crypto";
 import { createPayout, checkPayout, payoutBatchId, payoutRequest, payoutsEnabled, supportsSupplierPayout, type PayoutRequest } from "./paypal-payout";
+import { reviewedTerms } from "./reviewed-terms";
 import { reserveInvoiceObligation } from "./invoice-obligation";
-import { Query, Users } from "node-appwrite";
+import { Query, Users, type Models } from "node-appwrite";
 import { dataClient, dataDatabase, databaseId } from "../data/client";
 import { currentOperation } from "../data/coordinator";
 import { RuntimeStore } from "../data/runtime";
@@ -11,7 +12,9 @@ import { openCredentials } from "../integrations/credentials";
 import { InputError } from "../workspaces/validation";
 import { connectionId } from "../integrations/records";
 import { audit, enqueue, isPayoutEvent, notify, optionalRow, params, stableId, type Job } from "./store";
+import { inboxId } from "./inbox";
 import { proposalHash } from "./intelligence";
+import { enqueueSlackWorkflowUpdate, saveInvoicePaymentLink, type PayPalInvoice } from "./paypal-invoice-link";
 import { paypalBase, paypalToken } from "./paypal-client";
 import { resendClient } from "./resend";
 import type { GuardedCommit } from "./gmail-sync";
@@ -32,19 +35,23 @@ export async function decideWorkflow(workspaceId: string, workflowId: string, ac
     if (await optionalRow("approval_decisions", decisionId, db, tx)) throw new InputError("This workflow already has a decision.", 409);
     await db.createRow({ ...params("approval_decisions", decisionId, tx), permissions: [], data: { workspaceId, workflowId, actorId, decision: approved ? "approved" : "rejected", proposalHash: input.proposalHash, decidedAt: new Date().toISOString() } });
     if (approved) {
-      const integrationId = connectionId(workspaceId, "paypal"), connection = await db.getRow(params("integrations", integrationId, tx));
-      if (connection.workspaceId !== workspaceId || connection.provider !== "paypal" || connection.disconnectedAt || connection.environment !== "sandbox" || connection.status !== "connected") throw new InputError("Connect a healthy PayPal sandbox account before approving.", 409);
+      const integrationId = connectionId(workspaceId, "paypal"), connection = await optionalRow("integrations", integrationId, db, tx);
+      if (!connection || connection.workspaceId !== workspaceId || connection.provider !== "paypal" || connection.disconnectedAt || connection.environment !== "sandbox" || connection.status !== "connected") throw new InputError("Connect a healthy PayPal sandbox account before approving.", 409);
       const currency = String(workflow.currency), value = exactAmount(String(workflow.amount), currency);
       const proposal = JSON.parse(workflow.proposalJson), extraction = proposal.extraction;
+      const reviewed = proposal.ownerReviewedTerms ? reviewedTerms(proposal.ownerReviewedTerms) : null;
       const supported = payout ? payoutsEnabled() && supportsSupplierPayout(extraction) : supportedBillingIntent(extraction);
-      if (!supported || extraction?.currency !== currency || exactAmount(String(extraction?.amount), currency) !== value ||
-          proposal.intendedAction !== workflow.action || proposal.evidenceValid !== true || proposal.warnings?.length || extraction.uncertainties?.length) {
+      const matchesReview = reviewed
+        ? reviewed.amount === value && reviewed.currency === currency && reviewed.action === workflow.action && (!payout || payoutsEnabled())
+        : supported && extraction?.currency === currency && exactAmount(String(extraction?.amount), currency) === value
+          && proposal.evidenceValid === true && !proposal.warnings?.length && !extraction.uncertainties?.length;
+      if (proposal.intendedAction !== workflow.action || !matchesReview) {
         throw new InputError("The proposal requires manual review.", 409);
       }
       await reserveInvoiceObligation(db, tx, workflow, recipient);
       const request = payout ? payoutRequest(decisionId, recipient, value, currency) : { detail: { currency_code: currency, reference: `assentpay-${workflowId}` },
         primary_recipients: [{ billing_info: { email_address: recipient } }],
-        items: [{ name: String(extraction.purpose || "Approved service").slice(0, 200), quantity: "1", unit_amount: { currency_code: currency, value } }] };
+        items: [{ name: String(reviewed?.purpose || extraction?.purpose || "Approved service").slice(0, 200), quantity: "1", unit_amount: { currency_code: currency, value } }] };
       await db.createRow({ ...params("approval_bindings", decisionId, tx), permissions: [], data: { workspaceId, requestHash: digest(JSON.stringify(request)) } });
       await db.createRow({ ...params("financial_actions", decisionId, tx), permissions: [], data: { workspaceId, workflowId, connectionVersion: connection.connectionVersion, requestId: decisionId,
         status: "authorized", providerId: "", attemptedAt: new Date(0).toISOString(), requestJson: JSON.stringify({ request, recipient, proposalHash: input.proposalHash, approvedBy: actorId }) } });
@@ -52,6 +59,57 @@ export async function decideWorkflow(workspaceId: string, workflowId: string, ac
     }
     await db.updateRow({ ...params("financial_workflows", workflowId, tx), data: { status: approved ? "approved" : "rejected" } });
     await audit(db, tx, workspaceId, actorId, approved ? "workflow.approved" : "workflow.rejected", workflowId, randomBytes(16).toString("hex"), { proposalHash: String(input.proposalHash), action: String(workflow.action) });
+  });
+}
+export async function requestWorkflowReanalysis(workspaceId: string, workflowId: string, actorId: string, hash: unknown) {
+  return currentOperation().commit(async (db, tx) => {
+    await workerAuthorization(dataClient(), actorId)(workspaceId, ["owner"]);
+    const workflow = await optionalRow("financial_workflows", workflowId, db, tx);
+    if (!workflow || workflow.workspaceId !== workspaceId || workflow.messageId !== workflowId ||
+        workflow.status !== "needs_review" || workflow.providerId || hash !== proposalHash(workflow.proposalJson)) {
+      throw new InputError("Only an unchanged, undecided financial review can be reanalyzed.", 409);
+    }
+    const mail = await optionalRow("mail_messages", workflow.messageId, db, tx);
+    if (!mail || mail.workspaceId !== workspaceId) throw new InputError("Source message is unavailable.", 404);
+    const source = JSON.parse(mail.contentJson).source;
+    if (source !== "resend" && source !== "gmail") throw new InputError("This message source cannot be reanalyzed.", 409);
+    return enqueue({
+      workspaceId, integrationId: source === "resend" ? inboxId(workspaceId) : connectionId(workspaceId, "gmail"),
+      connectionVersion: mail.connectionVersion, requestedBy: actorId, kind: "financial-analyze",
+      key: stableId(workflowId, String(hash), "owner-reanalysis"), payload: { messageId: workflowId, reviewHash: hash }, force: true,
+    }, db, tx);
+  });
+}
+export async function prepareReviewedWorkflow(workspaceId: string, workflowId: string, actorId: string, input: Record<string, unknown>) {
+  const terms = reviewedTerms(input);
+  if (terms.action === "pay_supplier" && !payoutsEnabled())
+    throw new InputError("Sandbox supplier payouts are disabled on this deployment.", 409);
+  return currentOperation().commit(async (db, tx) => {
+    await workerAuthorization(dataClient(), actorId)(workspaceId, ["owner"]);
+    const workflow = await db.getRow(params("financial_workflows", workflowId, tx));
+    if (workflow.workspaceId !== workspaceId) throw new InputError("Workflow not found.", 404);
+    if (!["needs_review", "pending_approval"].includes(workflow.status) || workflow.providerId ||
+        input.proposalHash !== proposalHash(workflow.proposalJson) ||
+        await optionalRow("approval_decisions", stableId(workspaceId, workflowId), db, tx)) {
+      throw new InputError("The proposal changed or was already decided. Reload before preparing terms.", 409);
+    }
+    const proposal = JSON.parse(workflow.proposalJson);
+    if (proposal.duplicateOf) throw new InputError("Review the existing workflow for this obligation.", 409);
+    const proposalJson = JSON.stringify({
+      ...proposal,
+      ownerReviewedTerms: terms,
+      intendedAction: terms.action,
+      consequence: terms.action === "pay_supplier"
+        ? "Approve the exact sandbox payout after checking the supplier's PayPal email."
+        : "Approve the exact sandbox invoice draft after checking the customer's email. Sending requires separate approval.",
+    });
+    await db.updateRow({ ...params("financial_workflows", workflowId, tx), data: {
+      status: "pending_approval", action: terms.action, amount: terms.amount, currency: terms.currency, proposalJson,
+    } });
+    if (workflow.status === "needs_review") await enqueueSlackWorkflowUpdate(db, tx, workspaceId, workflowId, actorId, "approval");
+    await audit(db, tx, workspaceId, actorId, "workflow.terms_reviewed", workflowId, randomBytes(16).toString("hex"), {
+      previousProposal: String(input.proposalHash), revisedProposal: proposalHash(proposalJson),
+    });
   });
 }
 export async function reviseWorkflowAmount(workspaceId: string, workflowId: string, actorId: string, hash: unknown, amount: unknown) {
@@ -65,7 +123,7 @@ export async function reviseWorkflowAmount(workspaceId: string, workflowId: stri
     const proposal = JSON.parse(workflow.proposalJson);
     const value = exactAmount(typeof amount === "string" ? amount.trim() : "", workflow.currency);
     const evidence = proposal.extraction?.evidence;
-    if (proposal.evidenceValid !== true || proposal.warnings?.length || !Array.isArray(evidence)) {
+    if (proposal.ownerReviewedTerms || proposal.evidenceValid !== true || proposal.warnings?.length || !Array.isArray(evidence)) {
       throw new InputError("The source evidence requires manual review.", 409);
     }
     const sources: Record<string, string> = Object.create(null);
@@ -94,7 +152,20 @@ async function getInvoice(token: string, id: string) {
   if (!/^INV2-[A-Z0-9-]{8,100}$/.test(id)) throw new InputError("Invalid PayPal invoice reference.");
   const response = await fetch(`${paypalBase}/v2/invoicing/invoices/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000), redirect: "error" });
   if (!response.ok) throw new Error("PayPal invoice retrieval unavailable");
-  return await response.json() as { id: string; status: string; detail?: { reference?: string } };
+  return await response.json() as PayPalInvoice;
+}
+async function findApprovedInvoice(token: string, request: ApprovedInvoice) {
+  const response = await fetch(`${paypalBase}/v2/invoicing/search-invoices?page_size=2&total_required=true`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ reference: request.detail.reference }),
+    signal: AbortSignal.timeout(10000),
+    redirect: "error",
+  });
+  if (!response.ok) return null;
+  const result = await response.json();
+  if (result.total_items !== 1 || result.items?.length !== 1) return null;
+  return getInvoice(token, result.items[0].id);
 }
 export async function executeFinancialAction(job: Job, commit: GuardedCommit) {
   const { workflowId } = JSON.parse(job.payloadJson), actionId = stableId(job.workspaceId, workflowId);
@@ -129,6 +200,14 @@ export async function executeFinancialAction(job: Job, commit: GuardedCommit) {
   const { request } = claim;
   const payout = "sender_batch_header" in request;
   let providerId = "";
+  async function recordVerifiedDraft(id: string) {
+    await commit(async (db, tx) => {
+      await db.updateRow({ ...params("financial_actions", actionId, tx), data: { status: "completed", providerId: id } });
+      await db.updateRow({ ...params("financial_workflows", workflowId, tx), data: { status: "draft_created", providerId: id } });
+      await notify(db, tx, job.workspaceId, `${workflowId}:draft`, "PayPal draft created", "The approved sandbox invoice is a draft. It has not been sent and no payment has been made.", "financial");
+      await audit(db, tx, job.workspaceId, job.requestedBy, "paypal.draft_created", workflowId, actionId);
+    });
+  }
   try {
     if (payout) {
       providerId = await createPayout(token, request);
@@ -150,22 +229,32 @@ export async function executeFinancialAction(job: Job, commit: GuardedCommit) {
       if (href) { const u = new URL(href); if (u.origin === paypalBase && u.pathname.startsWith("/v2/invoicing/invoices/")) providerId = u.pathname.split("/").at(-1) || ""; }
     }
     const invoice = await getInvoice(token, providerId);
-    if (invoice.detail?.reference !== `assentpay-${workflowId}`) throw new Error("Invoice correlation mismatch");
     assertInvoiceMatches(invoice, request, providerId);
-    await commit(async (db, tx) => {
-      await db.updateRow({ ...params("financial_actions", actionId, tx), data: { status: "completed", providerId } });
-      await db.updateRow({ ...params("financial_workflows", workflowId, tx), data: { status: "draft_created", providerId } });
-      await notify(db, tx, job.workspaceId, `${workflowId}:draft`, "PayPal draft created", "The approved sandbox invoice is a draft. It has not been sent and no payment has been made.", "financial");
-      await audit(db, tx, job.workspaceId, job.requestedBy, "paypal.draft_created", workflowId, actionId);
-    });
+    if (invoice.status !== "DRAFT") throw new Error("Unexpected invoice status");
   } catch {
+    if (!("sender_batch_header" in request)) {
+      const recovered = await (providerId ? getInvoice(token, providerId) : findApprovedInvoice(token, request)).catch(() => null);
+      if (recovered?.status === "DRAFT") {
+        let matches = false;
+        try {
+          assertInvoiceMatches(recovered, request, recovered.id);
+          matches = true;
+        } catch { /* Keep the outcome unknown when provider facts differ. */ }
+        if (matches) {
+          await recordVerifiedDraft(recovered.id);
+          return;
+        }
+      }
+    }
     await commit(async (db, tx) => {
       await db.updateRow({ ...params("financial_actions", actionId, tx), data: { status: "unknown", providerId } });
       await db.updateRow({ ...params("financial_workflows", workflowId, tx), data: { status: payout ? "payout_reconciliation_required" : "reconciliation_required", providerId } });
       await notify(db, tx, job.workspaceId, `${workflowId}:unknown`, "PayPal action needs reconciliation", "The result could not be confirmed. Automatic replay is blocked to prevent duplicate financial actions.");
       await audit(db, tx, job.workspaceId, job.requestedBy, "paypal.outcome_unknown", workflowId, actionId);
     });
+    return;
   }
+  await recordVerifiedDraft(providerId);
 }
 export async function requestPayoutCheck(workspaceId: string, workflowId: string, actorId: string, providerId: string) {
   if (!payoutBatchId(providerId)) throw new InputError("Enter the existing PayPal sandbox payout batch ID.");
@@ -224,8 +313,37 @@ export async function reconcilePayout(job: Job, commit: GuardedCommit) {
   });
 }
 
+export async function requestInvoiceCheck(workspaceId: string, workflowId: string, actorId: string) {
+  return currentOperation().commit(async (db, tx) => {
+    await workerAuthorization(dataClient(), actorId)(workspaceId, ["owner"]);
+    const integrationId = connectionId(workspaceId, "paypal");
+    const [workflow, connection, action] = await Promise.all([
+      optionalRow("financial_workflows", workflowId, db, tx),
+      optionalRow("integrations", integrationId, db, tx),
+      optionalRow("financial_actions", stableId(workspaceId, workflowId), db, tx),
+    ]);
+    if (!workflow || workflow.workspaceId !== workspaceId || !/^INV2-[A-Z0-9-]{8,100}$/.test(workflow.providerId))
+      throw new InputError("This workflow has no PayPal invoice to check.", 409);
+    if (!connection || connection.workspaceId !== workspaceId || connection.provider !== "paypal" ||
+        connection.environment !== "sandbox" || connection.status !== "connected" || connection.disconnectedAt ||
+        !action || action.workspaceId !== workspaceId || action.workflowId !== workflowId ||
+        action.status !== "completed" || action.providerId !== workflow.providerId || action.connectionVersion !== connection.connectionVersion)
+      throw new InputError("The original PayPal sandbox connection is required to check this invoice.", 409);
+    return enqueue({ workspaceId, integrationId, connectionVersion: connection.connectionVersion,
+      requestedBy: actorId, kind: "paypal-reconcile", key: stableId(workflowId, actorId, "owner-invoice-check"),
+      payload: { workflowId }, force: true }, db, tx);
+  });
+}
+
 export async function reconcilePaypal(job: Job, commit: GuardedCommit) {
-  const { receiptId } = JSON.parse(job.payloadJson), receipt = await optionalRow("webhook_events", receiptId);
+  const { receiptId, workflowId } = JSON.parse(job.payloadJson);
+  if (typeof workflowId === "string" && receiptId === undefined) {
+    const workflow = await optionalRow("financial_workflows", workflowId);
+    if (!workflow || workflow.workspaceId !== job.workspaceId) throw new InputError("Invoice unavailable.", 404);
+    await reconcileInvoice(job, commit, workflow, workflow.providerId);
+    return;
+  }
+  const receipt = await optionalRow("webhook_events", receiptId);
   if (!receipt || receipt.workspaceId !== job.workspaceId) throw new InputError("Event unavailable.", 404);
   if (receipt.status === "processed") return;
   const payload = JSON.parse(receipt.payloadJson), providerId = payload.resourceId;
@@ -245,22 +363,29 @@ export async function reconcilePaypal(job: Job, commit: GuardedCommit) {
     return;
   }
   if (typeof providerId !== "string" || !providerId.startsWith("INV2-")) return;
-  const { token } = await providerToken(job, "paypal"), invoice = await getInvoice(token, providerId);
   const page = await dataDatabase().listRows({ ...params("financial_workflows"), queries: [Query.equal("workspaceId", job.workspaceId), Query.equal("providerId", providerId), Query.limit(2)] });
   if (page.rows.length !== 1) return;
-  const workflow = page.rows[0];
+  await reconcileInvoice(job, commit, page.rows[0], providerId, receiptId);
+}
+
+async function reconcileInvoice(job: Job, commit: GuardedCommit, workflow: Models.DefaultRow, providerId: string, receiptId?: string) {
+  if (workflow.workspaceId !== job.workspaceId || workflow.providerId !== providerId)
+    throw new InputError("Invoice authorization changed.", 403);
   const actionId = stableId(job.workspaceId, workflow.$id);
   const [action, binding] = await Promise.all([optionalRow("financial_actions", actionId), optionalRow("approval_bindings", actionId)]);
   if (!action || !binding || action.workspaceId !== job.workspaceId || binding.workspaceId !== job.workspaceId || action.connectionVersion !== job.connectionVersion) throw new InputError("Invoice approval binding unavailable.", 409);
+  const { token } = await providerToken(job, "paypal"), invoice = await getInvoice(token, providerId);
   const approved = boundRequest(action.requestJson, binding.requestHash);
   assertInvoiceMatches(invoice, approved.request, providerId);
   const states: Record<string, string> = { DRAFT: "draft_created", SENT: "invoice_sent", PAID: "paid", MARKED_AS_PAID: "externally_marked_paid", PARTIALLY_PAID: "partially_paid", CANCELLED: "cancelled", REFUNDED: "refunded", PARTIALLY_REFUNDED: "partially_refunded", UNPAID: "unpaid", PAYMENT_PENDING: "payment_pending", SCHEDULED: "scheduled" };
   const status = states[invoice.status];
   if (!status || invoice.detail?.reference !== `assentpay-${workflow.$id}`) throw new InputError("Unrecognized invoice state or correlation.");
   await commit(async (db, tx) => {
-    const latest = await db.getRow(params("webhook_events", receiptId, tx));
-    if (latest.workspaceId !== job.workspaceId) throw new InputError("Event tenant changed.", 403);
-    if (latest.status === "processed") return;
+    if (receiptId) {
+      const latest = await db.getRow(params("webhook_events", receiptId, tx));
+      if (latest.workspaceId !== job.workspaceId) throw new InputError("Event tenant changed.", 403);
+      if (latest.status === "processed") return;
+    }
     const currentWorkflow = await db.getRow(params("financial_workflows", workflow.$id, tx));
     const currentAction = await db.getRow(params("financial_actions", actionId, tx));
     const currentBinding = await db.getRow(params("approval_bindings", actionId, tx));
@@ -268,8 +393,9 @@ export async function reconcilePaypal(job: Job, commit: GuardedCommit) {
     assertInvoiceMatches(invoice, boundRequest(currentAction.requestJson, currentBinding.requestHash).request, providerId);
     const nextStatus = reconciliationState(currentWorkflow.status, status);
     await db.updateRow({ ...params("financial_workflows", workflow.$id, tx), data: { status: nextStatus } });
-    await db.updateRow({ ...params("webhook_events", receiptId, tx), data: { status: "processed" } });
-    await audit(db, tx, job.workspaceId, job.requestedBy, "paypal.reconciled", workflow.$id, receiptId, { status });
+    await saveInvoicePaymentLink(db, tx, job.workspaceId, workflow.$id, job.requestedBy, invoice, nextStatus);
+    if (receiptId) await db.updateRow({ ...params("webhook_events", receiptId, tx), data: { status: "processed" } });
+    await audit(db, tx, job.workspaceId, job.requestedBy, "paypal.reconciled", workflow.$id, receiptId || job.leaseToken, { status });
     if (currentWorkflow.status !== nextStatus) await notify(db, tx, job.workspaceId, stableId(job.workspaceId, workflow.$id, nextStatus), "PayPal invoice updated", nextStatus === "externally_marked_paid" ? "The merchant manually marked this invoice paid. This is not verified payer settlement." : `Verified provider invoice status: ${invoice.status}.`, "financial");
   });
 }

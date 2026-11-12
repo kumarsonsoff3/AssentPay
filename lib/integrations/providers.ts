@@ -261,7 +261,17 @@ export async function slackHealth(credentials: Credentials) {
   return current;
 }
 export async function paypalVerify(clientId: string, clientSecret: string): Promise<{ applicationIdentity: string; merchantIdentityVerified: false }> {
-  const { paypalToken } = await import("../automation/paypal-client");
-  await paypalToken(clientId, clientSecret);
+  const { paypalBase, paypalToken } = await import("../automation/paypal-client");
+  const token = await paypalToken(clientId, clientSecret);
+  const response = await fetch(`${paypalBase}/v2/invoicing/invoices?page_size=1`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10000),
+    redirect: "error",
+  });
+  await response.body?.cancel();
+  if (!response.ok) throw new InputError(
+    "PayPal sandbox Invoicing API access could not be verified. Check the REST app's Invoicing permissions.",
+    [401, 403].includes(response.status) ? 403 : 503,
+  );
   return { applicationIdentity: paypalApplicationIdentity(clientId), merchantIdentityVerified: false };
 }

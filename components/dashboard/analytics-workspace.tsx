@@ -38,10 +38,10 @@ const amountLabel = (value: string) => {
 const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
 const metrics = [
   { key: "collected", label: "Paid", help: "Reported paid by PayPal", Icon: CheckCircle2 },
-  { key: "outstanding", label: "Outstanding", help: "Issued or scheduled invoices", Icon: Clock3 },
+  { key: "outstanding", label: "Outstanding", help: "Open invoices", Icon: Clock3 },
   { key: "drafts", label: "Drafts", help: "Created and still unsent", Icon: FileText },
 ] as const;
-export function AnalyticsWorkspace({ workspaceId, data }: { workspaceId: string; data: AnalyticsData | null }) {
+export function AnalyticsWorkspace({ workspaceId, userId, data }: { workspaceId: string; userId: string; data: AnalyticsData | null }) {
   const router = useRouter();
   const [retrying, retry] = useTransition();
   const [view, setView] = useState<AnalyticsView>({ ...defaultAnalyticsView }),
@@ -250,7 +250,7 @@ export function AnalyticsWorkspace({ workspaceId, data }: { workspaceId: string;
           </section>
         </div>
         {studioOpened && <div className={styles.studio} hidden={mode !== "studio"}>
-          <StudioWorkspace workspaceId={workspaceId} rows={data.items} aiAvailable={data.aiAvailable} />
+          <StudioWorkspace workspaceId={workspaceId} userId={userId} rows={data.items} summary={data.summary} aiAvailable={data.aiAvailable} />
         </div>}
       </>}
     </div>

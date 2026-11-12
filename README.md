@@ -23,6 +23,10 @@ Set `APP_URL` to the exact origin used to sign in. Register that hostname as an
 Appwrite Web platform, enable email/password authentication and email verification,
 and configure email delivery for verification, password recovery, and invitations.
 Use one HTTPS origin when testing Slack OAuth or incoming provider webhooks.
+For a tunnel that stays open between edits, serve a local production build with
+`npm run build:webpack` and `npm start` on the tunnel’s existing port. Stop the
+development server on that port first. This avoids development hot reload on the
+shared URL.
 
 `.env.example` lists the server, integration, and worker settings. Keep credentials
 in ignored environment files. Appwrite API keys, provider credentials, and encryption
@@ -37,7 +41,9 @@ email imports, document analysis, notifications, and approved financial workflow
 Deploy the private Appwrite integration Function as the primary worker. New
 automation jobs trigger the Function on creation. Its five-minute interval
 handles due retries, expired leases and housekeeping. The Function deployment
-includes an offline verifier for its bundled dependencies.
+includes an offline verifier for its bundled dependencies. Dashboard pages load
+on navigation and on **Refresh dashboard**. Email setup checks are limited to an
+open forwarding confirmation or delivery test.
 
 ```sh
 npm run function:build
@@ -125,7 +131,13 @@ interval dispatcher.
   action token, and the same immutable proposal checks as dashboard decisions.
 - **PayPal:** each workspace connects its own sandbox REST app credentials through
   workspace setup. Set `PAYPAL_WEBHOOK_IDS_JSON` for the workspace-specific sandbox
-  webhook registered at `APP_URL/api/webhooks/paypal/WORKSPACE_ID`.
+  webhook registered at `APP_URL/api/webhooks/paypal/WORKSPACE_ID`. Owners can also
+  use **Check PayPal status** on an existing invoice. The connection
+  check reads the Invoicing API after authenticating. To enable supplier payouts,
+  grant the sandbox REST app Payouts access and set
+  `PAYPAL_SANDBOX_PAYOUTS_ENABLED=true` in both the web app and Function.
+  The reviewed currency must be supported by PayPal for the operation. INR is
+  outside PayPal's published payment currency list.
 - **AI:** configure `OPENAI_API_KEY` and a Responses API model with Structured Outputs
   in `OPENAI_MODEL`. Document vision is opt-in
   with `AI_DOCUMENT_VISION_ENABLED=true`.
@@ -140,7 +152,11 @@ The worker tracks a billing obligation by workspace, reported counterparty and
 explicit source reference. An agreement can link to one later billing request
 when the cited amount and currency agree. Other requests for that obligation link
 to the existing workflow for review. Missing or conflicting evidence requires
-manual review. A new conflict can hold an approved draft or send that has yet to
+manual review. The review shows payment confirmations, contract totals and
+installments as separate sourced amounts. Owners can reanalyze an undecided
+review and can prepare PayPal terms after confirming the open balance and stable
+obligation reference. Saving terms requires a separate owner approval that
+selects the exact recipient. A new conflict can hold an approved draft or send that has yet to
 execute. Invoice sending still requires its own exact owner approval.
 
 Approval also claims the quoted reference against the owner-selected billing
@@ -161,13 +177,15 @@ reused references and installment arrangements can require human review.
 Resend verifies and queues received email. The worker analyzes the email and
 supported documents with OpenAI. Nonfinancial messages produce no financial
 proposal, Slack alert or new agent memory. Financial messages send a Slack review
-brief and secure links. Link an owner’s Slack identity first to use signed,
+brief with a button to open secure review. Link an owner’s Slack identity first to use signed,
 one-time decision cards.
 
 - **Customer invoice.** Review source evidence and select the customer email.
   Approve a draft in Slack or the dashboard. Verify the provider draft and approve
   a separate send card in Slack or the dashboard. The customer pays on PayPal.
-  Verified PayPal invoice events update AssentPay.
+  Verified PayPal invoice events update AssentPay. When PayPal supplies the
+  verified customer payment link, a Slack card opens the invoice through the
+  workspace owner’s signed-in AssentPay session.
 - **Supplier payout.** Set `PAYPAL_SANDBOX_PAYOUTS_ENABLED=true` on matching web
   and private worker releases, and connect a Payouts-enabled sandbox account.
   Review the quoted reference, amount and currency and select the supplier's

@@ -101,6 +101,16 @@ export async function slackConnection(
     );
   return row;
 }
+export async function slackIdentityLinked(workspaceId: string, ownerId: string) {
+  const [identity, slack] = await Promise.all([
+    optionalRow("slack_identities", identityId(workspaceId, ownerId)),
+    optionalRow("integrations", connectionId(workspaceId, "slack")),
+  ]);
+  return identity?.workspaceId === workspaceId && identity.ownerId === ownerId && identity.status === "active" &&
+    slack?.workspaceId === workspaceId && slack.provider === "slack" && !slack.disconnectedAt && slack.status === "connected" &&
+    identity.connectionVersion === slack.connectionVersion && identity.teamId === slack.externalId;
+}
+
 export async function activeSlackIdentity(
   db: TablesDB,
   tx: string,
@@ -301,6 +311,8 @@ export async function manageSlackIdentity(
       throw new InputError("Proposal changed or already decided.", 409);
     const email = send ? JSON.parse(review!.snapshotJson).invoice.primary_recipients?.[0]?.billing_info?.email_address : input.recipientEmail;
     if (send && !recipient.safeParse(email).success) throw new InputError("The verified invoice recipient is unavailable.", 409);
+    if (!send && email && (workflow.status !== "pending_approval" || !["create_draft_invoice", "pay_supplier"].includes(workflow.action)))
+      throw new InputError("Prepare the PayPal terms in Approvals before selecting a recipient.", 409);
     const merchant = email ? await db.getRow(params("integrations", connectionId(workspace, "paypal"), tx)) : null;
     if (merchant && (merchant.workspaceId !== workspace || merchant.provider !== "paypal" ||
       merchant.status !== "connected" || merchant.environment !== "sandbox" || merchant.disconnectedAt ||

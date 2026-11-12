@@ -15,6 +15,8 @@ import {
   reconciliationState,
 } from "./financial-safety";
 import { paypalBase, paypalToken } from "./paypal-client";
+import { sendId, saveInvoicePaymentLink, type PayPalInvoice as Invoice } from "./paypal-invoice-link";
+export { sendId } from "./paypal-invoice-link";
 import { reserveInvoiceObligation } from "./invoice-obligation";
 import type { GuardedCommit } from "./gmail-sync";
 
@@ -33,8 +35,6 @@ const uncertainState = (current: string) =>
   ].includes(current)
     ? current
     : "send_reconciliation_required";
-export const sendId = (workspace: string, workflow: string) =>
-  stableId(workspace, workflow, "send_invoice_v1");
 const states: Record<string, string> = {
   DRAFT: "draft_created",
   SENT: "invoice_sent",
@@ -48,31 +48,6 @@ const states: Record<string, string> = {
   REFUNDED: "refunded",
   PARTIALLY_REFUNDED: "partially_refunded",
 };
-type Invoice = {
-  id: string;
-  status: string;
-  detail?: { reference?: string; metadata?: { recipient_view_url?: string } };
-};
-/** Call only with the authenticated GET result, never user input or POST response. */
-export function hostedPaymentLink(invoice: Invoice) {
-  if (
-    !["SENT", "UNPAID", "PAYMENT_PENDING", "PARTIALLY_PAID"].includes(
-      invoice.status,
-    )
-  )
-    return null;
-  try {
-    const u = new URL(invoice.detail?.metadata?.recipient_view_url || "");
-    return u.origin === "https://www.sandbox.paypal.com" &&
-      !u.username &&
-      !u.password &&
-      u.pathname.startsWith("/invoice/p/")
-      ? u.href
-      : null;
-  } catch {
-    return null;
-  }
-}
 async function authority(workspace: string, actor: string) {
   await workerAuthorization(dataClient(), actor)(workspace, ["owner"]);
   const found = await new RuntimeStore(
@@ -474,21 +449,11 @@ export async function executeInvoiceSend(
         ...params("paypal_send_approvals", id, tx),
         data: { status: "completed" },
       });
+      const nextStatus = reconciliationState(w.status, state);
       await db.updateRow({
-        ...params("financial_workflows", workflowId, tx),
-        data: { status: reconciliationState(w.status, state) },
+        ...params("financial_workflows", workflowId, tx), data: { status: nextStatus },
       });
-      await db.upsertRow({
-        ...params("paypal_invoice_views", id, tx),
-        permissions: [],
-        data: {
-          workspaceId: job.workspaceId,
-          workflowId,
-          providerId: invoice.id,
-          paymentLink: hostedPaymentLink(invoice) || "",
-          verifiedAt: new Date().toISOString(),
-        },
-      });
+      await saveInvoicePaymentLink(db, tx, job.workspaceId, workflowId, job.requestedBy, invoice, nextStatus);
       await audit(
         db,
         tx,

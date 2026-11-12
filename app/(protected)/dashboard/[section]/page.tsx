@@ -47,7 +47,7 @@ const shortcuts: Partial<Record<DashboardSectionId, { href: string; label: strin
   memory: { href: "/dashboard/agent", label: "View business rules" },
   notifications: { href: "/dashboard/activity", label: "View agent activity" },
 };
-type Props = { params: Promise<{ section: string }>; searchParams: Promise<{ workflow?: string | string[] }> };
+type Props = { params: Promise<{ section: string }>; searchParams: Promise<{ workflow?: string | string[]; message?: string | string[] }> };
 export const instant = false;
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const item = dashboardSection((await params).section);
@@ -60,7 +60,9 @@ export default async function SectionPage({ params, searchParams }: Props) {
   const { section } = await params,
     item = dashboardSection(section);
   if (!item || item.id === "overview") notFound();
-  const requestedWorkflow = section === "approvals" ? (await searchParams).workflow : undefined;
+  const query = await searchParams;
+  const requestedWorkflow = ["approvals", "invoices"].includes(section) ? query.workflow : undefined;
+  const messageId = section === "inbox" && typeof query.message === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,35}$/.test(query.message) ? query.message : undefined;
   const workflowId = typeof requestedWorkflow === "string" ? requestedWorkflow : undefined;
   const { workspace, user } = await dashboardContext();
   if (item.id === "settings") redirect(`/workspaces/${workspace.id}/settings`);
@@ -76,7 +78,7 @@ export default async function SectionPage({ params, searchParams }: Props) {
         description={item.description}
         icon={<Icon size={26} />}
         tone={item.group === "intelligence" ? "violet" : item.group === "manage" ? "teal" : "blue"}
-        action={workflowId ? { href: "/dashboard/approvals", label: "View all financial reviews" } : shortcuts[item.id]}
+        action={workflowId ? { href: section === "invoices" ? "/dashboard/invoices" : "/dashboard/approvals", label: section === "invoices" ? "View all invoices" : "View all financial reviews" } : shortcuts[item.id]}
       />
       {["approvals", "invoices", "deals", "memory"].includes(section) ? (
         <BackendWorkspace workspaceId={workspace.id} userId={user.$id} timeZone={workspace.timezone} resource={section === "memory" ? "memory" : "workflows"} workflowId={workflowId} workflowView={workflowView} canManage={section === "memory" ? ["owner", "admin"].includes(workspace.role) : workspace.role === "owner"} />
@@ -87,7 +89,7 @@ export default async function SectionPage({ params, searchParams }: Props) {
           deliveries={<BackendWorkspace {...resourceProps} resource="deliveries" canManage={false} />}
         />
       ) : section === "inbox" || section === "clients" || section === "documents" ? (
-        <BackendWorkspace {...resourceProps} resource={section === "inbox" ? "messages" : section === "clients" ? "contacts" : "documents"} canManage={canManage} />
+        <BackendWorkspace {...resourceProps} messageId={messageId} resource={section === "inbox" ? "messages" : section === "clients" ? "contacts" : "documents"} canManage={canManage} />
       ) : section === "integrations" ? (
         <>
           <Suspense fallback={<ResourceLoading title="Loading connections…" />}>
@@ -97,7 +99,7 @@ export default async function SectionPage({ params, searchParams }: Props) {
         </>
       ) : section === "analytics" ? (
         <Suspense fallback={<ResourceLoading title="Loading analytics…" />}>
-          <AnalyticsPanel workspaceId={workspace.id} />
+          <AnalyticsPanel workspaceId={workspace.id} userId={user.$id} />
         </Suspense>
       ) : section === "team" ? (
         <Suspense fallback={<ResourceLoading title="Loading team…" />}>

@@ -3,7 +3,8 @@ import { deliverSlackCard, slackDeliveryReference } from './slack-card-delivery'
 import { Query } from "node-appwrite";
 import { randomBytes } from "node:crypto";
 import { dataClient, dataDatabase } from "../data/client";
-import { currentOperation, withStorageOperation } from "../data/coordinator";
+import { currentOperation, RevisionConflictError, withStorageOperation } from "../data/coordinator";
+import { isConflict } from "../data/repositories";
 import { workerAuthorization } from "../integrations/health";
 import { InputError } from "../workspaces/validation";
 import { GmailError } from "./gmail-client";
@@ -15,7 +16,6 @@ import {
   notify,
   optionalRow,
   params,
-  signal,
   type Job,
 } from "./store";
 import { deliverFinancialSlack, SlackRateLimitError } from "./financial-slack";
@@ -68,7 +68,6 @@ async function claim(id: string, queuedOnly: boolean) {
       leaseUntil: new Date(now + 150000).toISOString(),
     };
     await db.updateRow({ ...params("automation_jobs", id, tx), data });
-    await signal(db, tx, row.workspaceId, "job.running");
     return { ...row, ...data } as Job;
   });
 }
@@ -241,7 +240,7 @@ export async function processJob(id: string, queuedOnly = false) {
           "Automation needs attention",
           "A background task exhausted its retries. Review the connection, then retry the task.",
         );
-    } else await signal(db, tx, job.workspaceId, `job.${status}`);
+    }
     return { status };
   });
 }
@@ -292,7 +291,15 @@ export async function dispatchCreatedJob(id: string) {
   const job = await optionalRow("automation_jobs", id);
   if (job?.status !== "queued" || !(Date.parse(job.nextAttemptAt) <= Date.now()))
     return { status: "ignored" };
-  return withStorageOperation("worker", () => processJob(id, true));
+  try {
+    return await withStorageOperation("worker", () => processJob(id, true));
+  } catch (error) {
+    if (!(error instanceof RevisionConflictError) && !isConflict(error)) throw error;
+    const latest = await optionalRow("automation_jobs", id);
+    if (!latest || latest.status !== "queued") return { status: "already_claimed" };
+    // The schedule will pick up any queued row when its next attempt is due.
+    return { status: "scheduled_for_catch_up" };
+  }
 }
 
 export async function dispatchAutomation(options: { inboxOnly?: boolean; analysisOnly?: boolean; triageOnly?: boolean } = {}) {
@@ -307,6 +314,7 @@ export async function dispatchAutomation(options: { inboxOnly?: boolean; analysi
       [due, expired] = await Promise.all([
         dataDatabase().listRows({
           ...params("automation_jobs"),
+          total: false,
           queries: [
             ...(kinds ? [Query.equal("kind", kinds)] : []),
             Query.equal("status", ["queued", "retry"]),
@@ -317,6 +325,7 @@ export async function dispatchAutomation(options: { inboxOnly?: boolean; analysi
         }),
         dataDatabase().listRows({
           ...params("automation_jobs"),
+          total: false,
           queries: [
             ...(kinds ? [Query.equal("kind", kinds)] : []),
             Query.equal("status", "running"),

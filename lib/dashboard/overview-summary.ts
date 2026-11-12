@@ -22,10 +22,11 @@ export function summarizeInvoices(
   >();
   let excluded = 0;
   for (const row of rows) {
+    if (!String(row.providerId || "").startsWith("INV2-")) continue;
     const bucket =
       row.status === "paid"
         ? "collected"
-        : ["invoice_sent", "unpaid", "payment_pending", "scheduled"].includes(
+        : ["invoice_sent", "unpaid", "payment_pending"].includes(
               String(row.status),
             )
           ? "outstanding"

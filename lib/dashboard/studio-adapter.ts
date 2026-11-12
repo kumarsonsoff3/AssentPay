@@ -1,5 +1,7 @@
 import type { AgAiEvent, AgAiOutputItem, AgLlmAdapter } from "ag-studio";
 
+type ProviderReasoning = { id: string; type: "reasoning"; summary: []; encrypted_content: string };
+
 type ProviderItem = {
   id: string;
   type: "function_call" | "message";
@@ -10,14 +12,22 @@ type ProviderItem = {
 };
 
 export function studioAdapter(workspaceId: string): AgLlmAdapter {
+  const reasoningByCall = new Map<string, ProviderReasoning[]>();
   return {
     executeTurn(request, options) {
       const complete = (async () => {
+        const includedReasoning = new Set<string>();
         const input = request.input.flatMap<Record<string, unknown>>(item => {
           switch (item.type) {
             case "reasoning": return [];
-            case "function_call":
-              return [{ type: item.type, call_id: item.callId, name: item.name, arguments: item.arguments }];
+            case "function_call": {
+              const prior = (reasoningByCall.get(item.callId) || []).filter(reasoning => {
+                if (includedReasoning.has(reasoning.id)) return false;
+                includedReasoning.add(reasoning.id);
+                return true;
+              });
+              return [...prior, { type: item.type, call_id: item.callId, name: item.name, arguments: item.arguments }];
+            }
             case "function_call_output":
               return [{ type: item.type, call_id: item.callId, output: item.output }];
             case "message":
@@ -41,9 +51,18 @@ export function studioAdapter(workspaceId: string): AgLlmAdapter {
         });
         const result = await response.json();
         if (!response.ok || result.status !== "completed") throw new Error(result.error || "Studio response incomplete.");
-        const output = (result.output as ProviderItem[]).flatMap<AgAiOutputItem>(item => {
-          if (item.type === "function_call" && item.call_id && item.name && typeof item.arguments === "string")
+        if (!Array.isArray(result.output)) throw new Error("Studio response was missing its output.");
+        const reasoning: ProviderReasoning[] = [];
+        const output = (result.output as (ProviderItem | ProviderReasoning)[]).flatMap<AgAiOutputItem>(item => {
+          if (item.type === "reasoning") {
+            if (item.encrypted_content) reasoning.push(item);
+            return [];
+          }
+          if (item.type === "function_call" && item.call_id && item.name && typeof item.arguments === "string") {
+            if (reasoning.length) reasoningByCall.set(item.call_id, [...reasoning]);
+            if (reasoningByCall.size > 128) reasoningByCall.delete(reasoningByCall.keys().next().value!);
             return [{ kind: "output", type: "function_call", id: item.id, callId: item.call_id, name: item.name, arguments: item.arguments, status: "completed" }];
+          }
           if (item.type !== "message") return [];
           return [{
             kind: "output", type: "message", id: item.id, role: "assistant", status: "completed",

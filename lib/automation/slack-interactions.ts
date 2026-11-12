@@ -16,6 +16,15 @@ export function reviewAction(
     ownerId,
   });
 }
+function slackResponseUrl(value: unknown) {
+  if (typeof value !== "string" || value.length > 2048) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.origin === "https://hooks.slack.com" && !url.username && !url.password &&
+        !url.search && !url.hash && /^\/actions\/[A-Za-z0-9/_-]+$/.test(url.pathname)) return url.href;
+  } catch { /* Slack can omit the response URL. */ }
+}
+
 export function parseReviewInteraction(raw: string) {
   const form = new URLSearchParams(raw);
   if (form.getAll("payload").length !== 1)
@@ -47,14 +56,18 @@ export function parseReviewInteraction(raw: string) {
       teamId: body.team.id as string,
       slackUserId: body.user.id as string,
       action: action.action_id as SlackTokenAction,
+      responseUrl: slackResponseUrl(body.response_url),
     } as {
       token: string;
       teamId: string;
       slackUserId: string;
       action: SlackTokenAction;
+      responseUrl?: string;
       workspaceId?: never;
     };
   }
+  if (["assentpay_open_review", "assentpay_open_slack_setup", "assentpay_open_paypal"].includes(action.action_id))
+    return { openLink: true } as const;
   if (action.action_id !== "assentpay_review")
     throw new InputError("Unsupported review action.");
   let value;

@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { verifySlack, readWebhookText } from "@/lib/automation/webhook-auth";
 import { parseReviewInteraction } from "@/lib/automation/slack-interactions";
 import { optionalRow } from "@/lib/automation/store";
@@ -9,8 +10,9 @@ import { proposalHash } from "@/lib/automation/intelligence";
 import { InputError } from "@/lib/workspaces/validation";
 import { withStorageOperation } from "@/lib/data/coordinator";
 import { handleSlackToken } from "@/lib/automation/slack-approvals";
-// No Slack API calls in ingress. Decision tokens require a separately verified
-// owner identity and authenticated exact-recipient selection.
+export const maxDuration = 60;
+
+const ephemeral = (text: string) => ({ response_type: "ephemeral", text, replace_original: false });
 export async function POST(request: Request) {
   try {
     const raw = await readWebhookText(request);
@@ -20,15 +22,27 @@ export async function POST(request: Request) {
       request.headers.get("x-slack-signature"),
     );
     const input = parseReviewInteraction(raw);
+    if ("openLink" in input) return new Response(null, { status: 200 });
     if ("token" in input) {
-      const text = await withStorageOperation("mutation", () =>
-        handleSlackToken(input),
-      );
-      return json({
-        response_type: "ephemeral",
-        text,
-        replace_original: false,
+      const decide = () => withStorageOperation("mutation", () => handleSlackToken(input));
+      const responseUrl = input.responseUrl;
+      if (!responseUrl) return json(ephemeral(await decide()));
+
+      after(async () => {
+        let message: string;
+        try {
+          message = await decide();
+        } catch (error) {
+          message = error instanceof InputError ? error.message : "Could not confirm this decision. Check the proposal in AssentPay.";
+        }
+        try {
+          await fetch(responseUrl, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(ephemeral(message)), redirect: "error", signal: AbortSignal.timeout(5000),
+          });
+        } catch { /* The workspace retains the decision even if Slack feedback is unavailable. */ }
       });
+      return new Response(null, { status: 200 });
     }
     const meta = await optionalRow(
       "integrations",

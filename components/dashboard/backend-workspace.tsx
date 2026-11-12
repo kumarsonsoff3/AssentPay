@@ -17,6 +17,7 @@ async function ResourceContent({
   canManage,
   timeZone,
   workflowId,
+  messageId,
   workflowView,
 }: {
   workspaceId: string;
@@ -25,12 +26,13 @@ async function ResourceContent({
   canManage: boolean;
   timeZone?: string;
   workflowId?: string;
+  messageId?: string;
   workflowView?: WorkflowView;
 }) {
-  const data = await readResources(workspaceId, resource, userId, undefined, workflowId);
+  const data = await readResources(workspaceId, resource, userId, undefined, workflowId, messageId);
   return (
     <LiveResource
-      key={`${workspaceId}:${resource}:${workflowView ?? ""}:${workflowId ?? ""}`}
+      key={`${workspaceId}:${resource}:${workflowView ?? ""}:${workflowId ?? messageId ?? ""}`}
       revision={createHash("sha256").update(JSON.stringify(data)).digest("base64url")}
       workspaceId={workspaceId}
       resource={resource}

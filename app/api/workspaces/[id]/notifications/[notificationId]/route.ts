@@ -1,7 +1,7 @@
 import { apiUser, workspaceAccess } from "@/lib/workspaces/server";
 import { apiError, inputBody, json, rateLimit } from "@/lib/workspaces/http";
 import { withStorageOperation } from "@/lib/data/coordinator";
-import { optionalRow, params, stableId, signal } from "@/lib/automation/store";
+import { optionalRow, params, stableId } from "@/lib/automation/store";
 import { InputError, validId } from "@/lib/workspaces/validation";
 export async function POST(
   request: Request,
@@ -30,7 +30,6 @@ export async function POST(
           permissions: [],
           data: { workspaceId: id, userId: user.$id, notificationId },
         });
-        await signal(db, tx, id, "notification.read");
       }),
     );
     return json({ read: true });

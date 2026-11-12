@@ -28,6 +28,12 @@ const events: Record<string, { title: string; description: string; tone: string;
   "inbox.source_updated": { title: "Forwarding mailbox selected", description: "The email address and provider for your setup have been saved.", tone: "blue", icon: Mail },
   "inbox.provisioned": { title: "Workspace inbox created", description: "Your private forwarding address is ready.", tone: "blue", icon: Inbox },
   "message.analyzed": { title: "Email analysis completed", description: "Extracted context is available for review.", tone: "violet", icon: Sparkles },
+  "message.reanalyzed": { title: "Source reanalyzed", description: "Updated amounts and evidence are available for review.", tone: "violet", icon: Sparkles },
+  "workflow.terms_reviewed": { title: "PayPal terms prepared", description: "Owner-reviewed terms are ready for approval.", tone: "blue", icon: ShieldCheck },
+  "workflow.slack_delivered": { title: "Slack review delivered", description: "The review card was posted to the configured Slack destination.", tone: "green", icon: CircleCheck },
+  "paypal.send_verified": { title: "PayPal invoice send verified", description: "The invoice status was confirmed with PayPal sandbox.", tone: "green", icon: CircleCheck },
+  "paypal.payout_submitted": { title: "PayPal payout submitted", description: "PayPal sandbox is processing the payout batch.", tone: "blue", icon: Clock3 },
+  "paypal.payout_verified": { title: "PayPal payout status verified", description: "Check the invoice and payout ledger for the latest provider status.", tone: "green", icon: CircleCheck },
   "workflow.approved": { title: "Financial proposal approved", description: "An owner authorized the reviewed proposal.", tone: "green", icon: ShieldCheck },
   "workflow.rejected": { title: "Financial proposal declined", description: "The proposed action was rejected during review.", tone: "amber", icon: ShieldCheck },
   "paypal.draft_created": { title: "Invoice draft created", description: "A draft invoice was created in PayPal sandbox.", tone: "green", icon: CircleCheck },
@@ -40,7 +46,7 @@ export function ActivityTimeline({ events: items, timeZone = "UTC", compact = fa
   const formatDate = (value: string, formatter: Intl.DateTimeFormat) =>
     Number.isFinite(Date.parse(value)) ? formatter.format(new Date(value)) : "Date unavailable";
   return <ol className={`${ui.timeline} ${compact ? ui.compactTimeline : ui.groupedTimeline}`}>{items.map((event, index) => {
-    const taskLabels: Record<string, string> = { "resend-ingest": "Email import", "financial-analyze": "Financial detail review", "document-import": "Attachment import", "gmail-sync": "Gmail message update", "paypal-execute": "Approved invoice draft", "paypal-reconcile": "Invoice status check", "workflow-notify": "Workspace notification", "provider-event": "Connected tool update" };
+    const taskLabels: Record<string, string> = { "resend-ingest": "Email import", "financial-analyze": "Financial detail review", "document-import": "Attachment import", "gmail-sync": "Gmail message update", "paypal-execute": "Approved PayPal action", "paypal-reconcile": "Invoice status check", "workflow-notify": "Workspace notification", "financial-slack-notify": "Slack review delivery", "slack-card-delivery": "Slack decision card", "provider-event": "Connected tool update" };
     const taskLabel = event.kind ? taskLabels[event.kind] : undefined;
     const detail = taskLabel && event.action.startsWith("job.") ? { title: `${taskLabel} ${event.action === "job.completed" ? "completed" : event.action === "job.failed" ? "needs attention" : "stopped"}`, description: "View Email & workspace processing for details.", tone: event.action === "job.failed" ? "amber" : "green", icon: event.action === "job.failed" ? TriangleAlert : CircleCheck } : events[event.action] || { title: event.action.replaceAll(/[._]/g, " ").replace(/^./, (c) => c.toUpperCase()), description: "Recorded in your workspace activity history.", tone: "blue", icon: Sparkles };
     const Icon = detail.icon;

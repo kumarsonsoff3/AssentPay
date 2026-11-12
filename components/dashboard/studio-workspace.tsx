@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AgStudio, AgStudioProvider } from "ag-studio-react";
 import {
-  AgStudioAiModule, AgStudioLicenseManager, createAiHarness, studioTheme,
+  AgStudioAiModule, AgStudioLicenseManager, createAiHarness, directLlmRunner, studioTheme,
   type AgAiHarnessSetup, type AgDataSourcesDefinition, type AgReportState, type AgStudioApi,
 } from "ag-studio";
 import { studioAdapter } from "@/lib/dashboard/studio-adapter";
-import type { AnalyticsRow } from "@/lib/dashboard/analytics-model";
+import type { AnalyticsData, AnalyticsRow } from "@/lib/dashboard/analytics-model";
 
 import styles from "./studio-workspace.module.css";
 
@@ -49,46 +49,113 @@ const theme = studioTheme.withParams({
 const license = process.env.NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY;
 if (license) AgStudioLicenseManager.setLicenseKey(license);
 
-export function StudioWorkspace({ workspaceId, rows, aiAvailable }: { workspaceId: string; rows: AnalyticsRow[]; aiAvailable: boolean }) {
+export function StudioWorkspace({ workspaceId, userId, rows, summary, aiAvailable }: {
+  workspaceId: string; userId: string; rows: AnalyticsRow[]; summary: AnalyticsData["summary"]; aiAvailable: boolean;
+}) {
+  const key = `assentpay:studio:v1:${workspaceId}:${userId}`;
+  const [studio, setStudio] = useState<AgStudioApi>();
+  const [layoutStatus, setLayoutStatus] = useState("");
+  const [startingLayout] = useState<AgReportState>(() => {
+    try {
+      const stored = window.localStorage.getItem(key);
+      if (!stored || stored.length > 256000) return initialState;
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed?.pages) && parsed.pages.some((page: { id?: string }) => page?.id === parsed.selectedPageId)
+        ? parsed : initialState;
+    } catch {
+      return initialState;
+    }
+  });
+
+  function saveLayout() {
+    if (!studio) return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(studio.getState()));
+      setLayoutStatus("Layout saved in this browser.");
+    } catch {
+      setLayoutStatus("This browser couldn’t save the layout.");
+    }
+  }
+
   const data = useMemo<AgDataSourcesDefinition>(() => ({
     sources: [{
       id: "financial_workflows",
       name: "Financial workflows",
-      description: "Read-only invoice and payout workflow states. Group monetary amounts by currency. Amounts describe the proposal and may be unsettled.",
+      description: "One row per loaded financial workflow, including review, invoices, and payouts. Use this table for counts, status, dates, and detailed records.",
       primaryKeyField: "id",
       fields: [
         { id: "id", name: "Workflow ID", format: "textFormat" },
         { id: "counterparty", name: "Counterparty", format: "textFormat" },
-        { id: "status", name: "Status", format: "textFormat" },
-        { id: "currency", name: "Currency", format: "textFormat" },
-        { id: "amount", name: "Proposed amount", format: "decimalFormat" },
-        { id: "updatedAt", name: "Last updated (UTC)", format: "textFormat" },
+        { id: "status", name: "Status", format: "textFormat", cardinality: "low" },
+        { id: "currency", name: "Currency", format: "textFormat", cardinality: "low" },
+        { id: "amount", name: "Reported or approved amount", format: "textFormat", description: "Display value for the grid. It may be a proposal, and must not be summed." },
+        { id: "updatedAt", name: "Last updated (UTC)", format: "dateTimeFormat", description: "Timestamp of the last workflow update. Use for activity trends." },
       ],
       data: rows.map(row => ({
         ...row,
         status: row.status.replaceAll("_", " ").replace(/^./, letter => letter.toUpperCase()),
-        amount: row.amount ? Number(row.amount) : null,
+        updatedAt: Number.isFinite(Date.parse(row.updatedAt)) ? new Date(row.updatedAt) : null,
+      })),
+    }, {
+      id: "invoice_totals",
+      name: "Verified invoice totals by currency",
+      description: "One row per currency with precomputed verified PayPal sandbox invoice face values. Excludes partial payments, refunds, and payouts. Compare categories within one currency.",
+      primaryKeyField: "currency",
+      fields: [
+        { id: "currency", name: "Currency", format: "textFormat", cardinality: "low" },
+        { id: "collected", name: "Paid invoice face value", format: "decimalFormat" },
+        { id: "outstanding", name: "Open invoice face value", format: "decimalFormat" },
+        { id: "drafts", name: "Unsent draft face value", format: "decimalFormat" },
+      ],
+      data: summary.currencies.map(row => ({
+        currency: row.currency, collected: Number(row.collected), outstanding: Number(row.outstanding), drafts: Number(row.drafts),
       })),
     }],
-  }), [rows]);
-  const ai = useMemo<AgAiHarnessSetup>(() => ({ api }) => createAiHarness(api as AgStudioApi, {
-    adapter: studioAdapter(workspaceId),
-    promptStarters: [
-      { label: "Compare statuses", prompt: "Chart the count of workflows by status." },
-      { label: "Review invoice amounts", prompt: "Show invoice amounts grouped by currency and status." },
-    ],
-  }), [workspaceId]);
+  }), [rows, summary.currencies]);
+  const ai = useMemo<AgAiHarnessSetup>(() => ({ api }) => {
+    const adapter = studioAdapter(workspaceId);
+    return createAiHarness(api as AgStudioApi, ({ tools: { studio } }) => ({
+      primary: "finance",
+      agents: [directLlmRunner({
+        id: "finance", name: "AssentPay Studio", adapter, maxTurns: 12,
+        instructions: () => [
+          "Build or edit the active dashboard when the user asks for a view. Answer questions with an aggregate query when data is needed. Use the existing chart or grid if it fits.",
+          "Inspect the schema for the exact field IDs and filter values, then add or configure widgets. Check the result and report what changed. For a status chart, count workflow IDs.",
+          "Use financial_workflows for detailed records and counts. Use invoice_totals only for PayPal sandbox invoice face values by currency. Require a single currency for monetary comparisons or show each currency on its own row.",
+          "Use the updated timestamp only for activity trends. Do not treat it as a payment or invoice issue date. Blank or unconfirmed amounts are unknown.",
+          `The dashboard has ${rows.length} loaded workflows. ${summary.partial ? "Coverage is partial. State this when giving results." : "Use only the rows and verified totals available here."}`,
+        ].join("\n"),
+        tools: () => [
+          studio.viewSchema(), studio.viewPage(), studio.viewWidget(), studio.executeQuery(),
+          studio.addWidget(), studio.positionWidget(), studio.removeWidget(),
+          studio.addPageFilter(), studio.removePageFilter(), studio.addWidgetFilter(), studio.removeWidgetFilter(),
+          ...["grid", "column-chart-grouped", "line-chart", "value"].map(widgetType =>
+            studio.configureWidget({ widgetType }, { name: `configure_${widgetType.replaceAll("-", "_")}` }),
+          ),
+        ],
+      })],
+      promptStarters: [
+        { label: "Review queue", prompt: "Add a table of workflows that need review or approval. Include counterparty, status, reported amount, currency, and last updated." },
+        { label: "Invoice totals", prompt: "Add a table showing the verified paid, open, and draft invoice face values by currency." },
+        { label: "Workflow activity", prompt: "Add a chart of workflow counts by status." },
+      ],
+    }));
+  }, [workspaceId, rows.length, summary.partial]);
 
   return <section aria-label="AG Studio dashboard">
     <div className={styles.studioIntro}>
       <h2>Dashboard builder</h2>
       <p>{aiAvailable ? "Edit the starter chart and table, or open Studio chat to ask for a new view. Your prompt and relevant dashboard context go to OpenAI." : "Edit the starter chart and table with Studio’s builder tools. Studio chat is unavailable until OpenAI is configured."}</p>
+      <div className={styles.layoutActions}>
+        <button type="button" disabled={!studio} onClick={saveLayout}>Save layout</button>
+        {layoutStatus && <span role="status">{layoutStatus}</span>}
+      </div>
       <p className={styles.studioScrollHint}>Swipe or scroll across the canvas to reach all builder tools.</p>
     </div>
     <div className={styles.studioCanvas} role="region" aria-label="Scrollable dashboard canvas" tabIndex={0}>
       <div className={styles.studioFrame} data-embedded-studio>
         <AgStudioProvider modules={[AgStudioAiModule]}>
-          <AgStudio style={{ height: "100%", width: "100%" }} theme={theme} data={data} initialState={initialState} mode="edit" ai={aiAvailable ? ai : undefined} />
+          <AgStudio style={{ height: "100%", width: "100%" }} theme={theme} data={data} initialState={startingLayout} onStudioReady={event => setStudio(event.api)} mode="edit" ai={aiAvailable ? ai : undefined} />
         </AgStudioProvider>
       </div>
     </div>

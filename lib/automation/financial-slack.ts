@@ -1,5 +1,6 @@
 import { activeSlackIdentity } from "./slack-approvals";
 import { isCurrencyCode } from "./extraction";
+import { invoiceCanBePaid, storedInvoicePaymentLink } from "./paypal-invoice-link";
 import { rupeeEvidence } from "./rupee-evidence";
 import { randomBytes } from "node:crypto";
 import { Query, Teams, Users } from "node-appwrite";
@@ -198,13 +199,12 @@ function financialReviewMessage(
     rupee === "ambiguous" && (!savedCurrency || savedCurrency === "INR");
   const currency =
     rupee === "explicit" || rupee === "workspace" ? "INR" : savedCurrency;
+  const reviewed = proposal.ownerReviewedTerms;
   const approvable =
     workflow.status === "pending_approval" &&
     !!savedCurrency &&
     !!value &&
-    !ambiguousRs &&
-    rupee !== "workspace" &&
-    currency === savedCurrency;
+    (!!reviewed || (!ambiguousRs && rupee !== "workspace" && currency === savedCurrency));
   const invoice = approvable && workflow.action === "create_draft_invoice";
   const payout = approvable && workflow.action === "pay_supplier";
   const hasDecision = invoice || payout;
@@ -221,7 +221,8 @@ function financialReviewMessage(
     whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") +
     (fraction ? `.${fraction}` : "");
   const amount = !value
-    ? "Amount unconfirmed"
+    ? "Review source amounts"
+    : reviewed ? `${savedCurrency} ${formatted}`
     : ambiguousRs
       ? `${formatted} Rs (currency unconfirmed)`
       : currency === "INR"
@@ -239,32 +240,51 @@ function financialReviewMessage(
   const links = hasDecision
     ? `${reviewLink}  ·  <${slackActionsUrl}|Prepare Slack decision>`
     : reviewLink;
+  const label = hasDecision ? "Amount for approval" : "Reported amount";
+  const reviewButtons = [
+    { type: "button", action_id: "assentpay_open_review", text: { type: "plain_text", text: hasDecision ? "Review and approve in AssentPay" : "Review financial terms" }, url: reviewUrl },
+    ...(hasDecision ? [{ type: "button", action_id: "assentpay_open_slack_setup", text: { type: "plain_text", text: "Prepare Slack approval" }, url: slackActionsUrl }] : []),
+  ];
   return {
-    text: `${heading}\nReported amount: ${amount}\n${status}\n${links}`,
+    text: `${heading}\n${label}: ${amount}\n${status}\n${links}`,
     blocks: [
       { type: "header", text: { type: "plain_text", text: heading } },
       {
         type: "section",
         fields: [
-          { type: "mrkdwn", text: `*Reported amount*\n${amount}` },
+          { type: "mrkdwn", text: `*${label}*\n${amount}` },
           { type: "mrkdwn", text: `*Status*\n${status}` },
         ],
       },
-      { type: "section", text: { type: "mrkdwn", text: links } },
+      { type: "actions", elements: reviewButtons },
     ],
   };
 }
+function paymentMessage(reviewUrl: string) {
+  const url = new URL(reviewUrl);
+  url.searchParams.set("open", "paypal");
+  const heading = "PayPal sandbox invoice available";
+  return {
+    text: `${heading}\n<${url.href}|Open PayPal invoice>`,
+    blocks: [
+      { type: "header", text: { type: "plain_text", text: heading } },
+      { type: "section", text: { type: "mrkdwn", text: "Open the invoice on PayPal with your AssentPay owner account." } },
+      { type: "actions", elements: [
+        { type: "button", action_id: "assentpay_open_paypal", text: { type: "plain_text", text: "Open PayPal invoice" }, url: url.href },
+      ] },
+    ],
+  };
+}
+
 export async function deliverFinancialSlack(job: Job, commit: GuardedCommit) {
-  const { workflowId } = JSON.parse(job.payloadJson),
+  const { workflowId, phase } = JSON.parse(job.payloadJson),
     workflow = await optionalRow("financial_workflows", workflowId);
   if (!workflow || workflow.workspaceId !== job.workspaceId)
     throw new InputError("Workflow unavailable.", 404);
-  if (
-    !["pending_approval", "needs_review", "duplicate_review"].includes(
-      workflow.status,
-    )
-  )
-    return;
+  const eligible = (status: string) => phase === "payment"
+    ? invoiceCanBePaid(status)
+    : phase === "approval" ? status === "pending_approval" : ["pending_approval", "needs_review", "duplicate_review"].includes(status);
+  if (!eligible(workflow.status)) return;
   const authorize = workerAuthorization(dataClient(), job.requestedBy),
     store = new RuntimeStore(
       dataDatabase(),
@@ -330,7 +350,7 @@ export async function deliverFinancialSlack(job: Job, commit: GuardedCommit) {
   );
   actionsUrl.searchParams.set("workflowId", workflowId);
   const workspace =
-    JSON.parse(String(workflow.proposalJson)).rupeeEvidence === undefined
+    phase !== "payment" && JSON.parse(String(workflow.proposalJson)).rupeeEvidence === undefined
       ? await optionalRow("workspaces", job.workspaceId)
       : null;
   const indiaWorkspace =
@@ -359,7 +379,7 @@ export async function deliverFinancialSlack(job: Job, commit: GuardedCommit) {
           );
     const deliveryId = reminder
       ? stableId(normalDeliveryId, job.$id)
-      : normalDeliveryId;
+      : phase ? stableId(normalDeliveryId, phase) : normalDeliveryId;
     const existing = await optionalRow("notification_deliveries", deliveryId);
     if (existing && !["retry", "failed"].includes(existing.status)) continue;
     let destination = reminder
@@ -392,9 +412,7 @@ export async function deliverFinancialSlack(job: Job, commit: GuardedCommit) {
       );
       if (
         current.workspaceId !== job.workspaceId ||
-        !["pending_approval", "needs_review", "duplicate_review"].includes(
-          current.status,
-        )
+        !eligible(current.status)
       )
         return false;
       const prior = await optionalRow(
@@ -404,7 +422,8 @@ export async function deliverFinancialSlack(job: Job, commit: GuardedCommit) {
         tx,
       );
       if (prior && !["retry", "failed"].includes(prior.status)) return false;
-      const message = financialReviewMessage(
+      if (phase === "payment" && !await storedInvoicePaymentLink(job.workspaceId, workflowId, current.providerId, current.status, db, tx)) return false;
+      const message = phase === "payment" ? paymentMessage(url) : financialReviewMessage(
         {
           status: current.status,
           action: current.action,

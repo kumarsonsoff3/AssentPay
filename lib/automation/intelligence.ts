@@ -14,20 +14,22 @@ import { documentBucketId } from "./schema";
 import type { GuardedCommit } from "./gmail-sync";
 import { analysisConfiguration, requestAnalysis, type AnalysisContent } from "./ai-provider";
 export { extractionSchema, type Extraction } from "./extraction";
-import { extractionSchema, isCurrencyCode } from "./extraction";
+import { analysisExtractionSchema, extractionSchema, isCurrencyCode } from "./extraction";
+import { requiresAmountReview, verifiedAgreementAmounts } from "./agreement-amounts";
 import { rupeeEvidence } from "./rupee-evidence";
 export const proposalHash = (proposal: string) => createHash("sha256").update(proposal).digest("hex");
 export async function analyzeMessage(job: Job, commit: GuardedCommit) {
-  const { messageId } = JSON.parse(job.payloadJson), mail = await optionalRow("mail_messages", messageId);
+  const { messageId, reviewHash } = JSON.parse(job.payloadJson), mail = await optionalRow("mail_messages", messageId);
   if (!mail || mail.workspaceId !== job.workspaceId || mail.connectionVersion !== job.connectionVersion) throw new InputError("Message unavailable.", 404);
-  if (await optionalRow("message_analyses", messageId)) return;
+  if (!reviewHash && await optionalRow("message_analyses", messageId)) return;
   const config = analysisConfiguration();
   const body = JSON.parse(mail.contentJson);
-  const [documents, memory, recent, senderHistory] = await Promise.all([
+  const [documents, memory, recent, senderHistory, workspace] = await Promise.all([
     dataDatabase().listRows({ ...params("documents"), queries: [Query.equal("workspaceId", job.workspaceId), Query.equal("messageId", mail.providerId), Query.limit(11)] }),
     dataDatabase().listRows({ ...params("agent_memory"), queries: [Query.equal("workspaceId", job.workspaceId), Query.equal("status", "active"), Query.greaterThan("expiresAt", new Date().toISOString()), Query.orderDesc("$updatedAt"), Query.limit(20)] }),
     dataDatabase().listRows({ ...params("financial_workflows"), queries: [Query.equal("workspaceId", job.workspaceId), Query.orderDesc("$createdAt"), Query.limit(20)] }),
     senderFinancialHistory(job.workspaceId, mail),
+    optionalRow("workspaces", job.workspaceId),
   ]);
   if (documents.rows.some(doc => doc.connectionVersion === job.connectionVersion && doc.status === "discovered" && /\.(pdf|txt|docx|xlsx)$/i.test(doc.filename) && doc.size > 0 && doc.size <= 5 * 1024 * 1024)) throw new InputError("Waiting for attachment import.", 503, "DOCUMENT_IMPORT_PENDING");
   const sources: Record<string, string> = { [messageId]: `Subject: ${mail.subject}\n${body.text}` }, warnings: string[] = [];
@@ -45,9 +47,13 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
     processedDocuments++;
     const bytes = new Uint8Array(await new Storage(dataClient()).getFileDownload({ bucketId: documentBucketId, fileId: doc.fileId }));
     if (doc.mimeType === "text/plain") {
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      sources[doc.$id] = text.slice(0, 20000);
-      if (text.length > 20000) warnings.push(`Text document ${doc.$id} was truncated; review the complete attachment.`);
+      try {
+        const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        sources[doc.$id] = text.slice(0, 20000);
+        if (text.length > 20000) warnings.push(`Text document ${doc.$id} was truncated; review the complete attachment.`);
+      } catch {
+        warnings.push(`Text document ${doc.$id} could not be decoded. Review the original attachment.`);
+      }
     }
     else if (doc.mimeType !== "application/pdf") {
       try {
@@ -72,20 +78,28 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
   }
   const recentPermissions = await Promise.all(recent.rows.map(workflow => memoryContextAllowed(job.workspaceId, workflow.messageId)));
   const allowedRecent = recent.rows.filter((_, index) => recentPermissions[index]);
-  content.unshift({ type: "input_text", text: JSON.stringify({ sources, untrustedSenderFinancialHistory: senderHistory, attachments: documents.rows.map(doc => ({ sourceId: doc.$id, filename: doc.filename, status: doc.status, textExtracted: !!sources[doc.$id] })), untrustedWorkspaceContext: memory.rows.map((m) => aiMemoryContext(m, job.workspaceId)).filter((m) => m !== null), recentWorkflows: allowedRecent.map((w) => ({ id: w.$id, counterparty: w.counterparty, amount: w.amount, currency: w.currency, status: w.status })), warnings }) });
+  content.unshift({ type: "input_text", text: JSON.stringify({ sources, workspaceName: workspace?.name || null, messageHeader: { from: mail.sender, to: body.to }, untrustedSenderFinancialHistory: senderHistory, attachments: documents.rows.map(doc => ({ sourceId: doc.$id, filename: doc.filename, status: doc.status, textExtracted: !!sources[doc.$id] })), untrustedWorkspaceContext: memory.rows.map((m) => aiMemoryContext(m, job.workspaceId)).filter((m) => m !== null), recentWorkflows: allowedRecent.map((w) => ({ id: w.$id, counterparty: w.counterparty, amount: w.amount, currency: w.currency, status: w.status })), warnings }) });
   const output = await requestAnalysis(
     FINANCIAL_INSTRUCTIONS,
-    content, z.toJSONSchema(extractionSchema), config,
+    content, z.toJSONSchema(analysisExtractionSchema), config,
   );
-  const parsed = extractionSchema.safeParse(output);
+  const parsed = analysisExtractionSchema.safeParse(output);
   if (!parsed.success) throw new InputError("Financial analysis did not match the required schema.", 502, "AI_INVALID_OUTPUT");
-  const extracted = { ...parsed.data, currency: isCurrencyCode(parsed.data.currency) ? parsed.data.currency : null };
+  const { amounts, ...facts } = parsed.data;
+  const extracted = { ...facts, currency: isCurrencyCode(facts.currency) ? facts.currency : null };
+  const verifiedAmounts = verifiedAgreementAmounts(amounts, sources).map(amount => ({
+    ...amount, currency: isCurrencyCode(amount.currency) ? amount.currency : null,
+  }));
+  if (amounts.length !== verifiedAmounts.length) warnings.push("One or more reported amounts could not be verified against the source.");
+  if (requiresAmountReview(extracted.category, amounts)) {
+    extracted.amount = null;
+    extracted.currency = null;
+  }
   const evidenceValid = extracted.evidence.length > 0 && extracted.evidence.every((e) => sources[e.sourceId]?.includes(e.quote) && e.quote.trim().length > 0);
   const quotes = evidenceValid ? extracted.evidence.map(e => e.quote) : [];
   const sourceTexts = Object.values(sources);
   let rupee = rupeeEvidence(extracted.amount, quotes, sourceTexts, false);
   if (rupee === "ambiguous" && (!extracted.currency || extracted.currency === "INR")) {
-    const workspace = await optionalRow("workspaces", job.workspaceId);
     rupee = rupeeEvidence(extracted.amount, quotes, sourceTexts, workspace?.country === "IN" && workspace.currency === "INR");
   }
   if (rupee === "explicit" || rupee === "workspace") extracted.currency = "INR";
@@ -100,6 +114,25 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
   const evidenceWarnings = tracksObligation ? billingEvidenceWarnings(extracted, sources) : [];
   warnings.push(...evidenceWarnings);
   if (tracksObligation && !counterparty) warnings.push("Identify the counterparty before approving a billing request.");
+  if (reviewHash) {
+    await commit(async (db, tx) => {
+      const workflow = await optionalRow("financial_workflows", messageId, db, tx);
+      const analysis = await optionalRow("message_analyses", messageId, db, tx);
+      if (!workflow || workflow.workspaceId !== job.workspaceId || !analysis || analysis.workspaceId !== job.workspaceId ||
+          workflow.status !== "needs_review" || workflow.providerId || proposalHash(workflow.proposalJson) !== reviewHash) return;
+      const previous = JSON.parse(workflow.proposalJson);
+      const proposalJson = JSON.stringify({
+        ...previous, extraction: extracted, amounts: verifiedAmounts, evidenceValid, warnings, rupeeEvidence: rupee,
+        obligationEvidence: false, triage: { reasons, senderHistory },
+      });
+      await db.updateRow({ ...params("message_analyses", messageId, tx), data: { category: extracted.category, resultJson: proposalJson } });
+      await db.updateRow({ ...params("financial_workflows", messageId, tx), data: {
+        proposalJson, amount: extracted.amount || "", currency: extracted.currency || "", counterparty: counterparty || workflow.counterparty,
+      } });
+      await audit(db, tx, job.workspaceId, job.requestedBy, "message.reanalyzed", messageId, job.$id);
+    });
+    return;
+  }
   const obligationEvidence = tracksObligation && !!counterparty && evidenceValid && evidenceWarnings.length === 0;
   const fingerprint = stableId(job.workspaceId, counterparty.toLowerCase(), reference || messageId, "obligation-v2");
 
@@ -124,7 +157,8 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
         if (row.workspaceId !== job.workspaceId) return false;
         try {
           const proposal = JSON.parse(row.proposalJson);
-          return proposal.obligationEvidence !== false && proposal.extraction?.reference?.trim().toLowerCase() === reference;
+          return proposal.ownerReviewedTerms?.reference?.trim().toLowerCase() === reference ||
+            (proposal.obligationEvidence !== false && proposal.extraction?.reference?.trim().toLowerCase() === reference);
         } catch {
           warnings.push("A historical proposal could not be checked. Verify this reference manually.");
           return false;
@@ -178,7 +212,7 @@ export async function analyzeMessage(job: Job, commit: GuardedCommit) {
       else await db.createRow({ ...params("financial_claims", claimId, tx), permissions: [], data: { workspaceId: job.workspaceId, workflowId: messageId, fingerprint } });
     }
     const proposal = JSON.stringify({
-      extraction: extracted, warnings, evidenceValid, obligationEvidence, rupeeEvidence: rupee, triage: { reasons, senderHistory },
+      extraction: extracted, amounts: verifiedAmounts, warnings, evidenceValid, obligationEvidence, rupeeEvidence: rupee, triage: { reasons, senderHistory },
       sourceMessageId: messageId, duplicateOf, agreementWorkflowId: agreement?.$id || null, intendedAction: action,
       consequence: ready ? supplierPayout ? "Send the exact approved sandbox payout to the supplier email selected by the owner." : "Create a PayPal sandbox draft invoice for the customer email selected by the owner. No invoice is sent and no money moves."
         : isDuplicate ? "Possible duplicate financial request. Review the existing workflow before taking any action."

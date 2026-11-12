@@ -38,6 +38,7 @@ export function DashboardHome({
   operations: OverviewData;
 }) {
   const gmailReceiving = operations.inbox ? operations.inbox.status === "receiving" : integrations.some((item) => item.provider === "gmail" && item.status === "connected");
+  const paypalConnected = integrations.some(item => item.provider === "paypal" && item.status === "connected");
   const healthy = integrations.filter((item) => item.provider !== "gmail" && item.status === "connected").length + Number(gmailReceiving);
   const month = new Intl.DateTimeFormat("en", {
     month: "long",
@@ -60,10 +61,10 @@ export function DashboardHome({
       tone: "blue",
     },
     {
-      label: "Awaiting approval",
-      value: operations.pendingCount,
+      label: "Items to review",
+      value: operations.reviewCount,
       icon: Clock3,
-      note: "Owner authorization required",
+      note: `${operations.pendingCount} ready for owner approval`,
       tone: "amber",
     },
     {
@@ -108,8 +109,8 @@ export function DashboardHome({
         <div className={styles.overviewColumn}>
         <section className={`${styles.panel} ${styles.overviewCash}`}>
           <PanelHeading
-            title="Cash flow overview"
-            detail={workspace.currency}
+            title="PayPal invoice totals"
+            detail="Sandbox · All time"
             href="/dashboard/invoices"
           />
           {operations.cashFlow.currencies.length ? <div className={styles.tableWrap}>
@@ -118,10 +119,10 @@ export function DashboardHome({
               <thead><tr><th>Currency</th><th>Verified paid</th><th>Open invoices</th><th>Unsent drafts</th></tr></thead>
               <tbody>{operations.cashFlow.currencies.map(item => <tr key={item.currency}><th scope="row">{item.currency}</th><td>{item.collected}</td><td>{item.outstanding}</td><td>{item.drafts}</td></tr>)}</tbody>
             </table>
-          </div> : <EmptyState compact title="No verified invoice values yet" description="Approved sandbox invoices appear here after provider verification." href="/dashboard/invoices" action="Explore invoices" />}
+          </div> : <EmptyState compact title="No verified invoice values yet" description={paypalConnected ? "Verified drafts, open invoices, and paid invoices appear here as they are processed." : "Connect your PayPal sandbox account to create and track invoices."} href={paypalConnected ? "/dashboard/invoices" : "/dashboard/integrations"} action={paypalConnected ? "View invoices" : "Set up PayPal"} />}
           <div className={styles.panelFoot}>
             <ShieldCheck size={14} />
-            <span>All-time sandbox invoice face values, not cash or bank balances. Open invoices exclude partial payments. {operations.cashFlow.excluded > 0 ? `${operations.cashFlow.excluded} uncertain, partial, manual, refunded or unverified records excluded. ` : ""}{operations.cashFlow.partial ? "Partial summary: first 1,000 records only." : "Currencies are not combined."}</span>
+            <span>Totals reflect verified invoice face values by currency. Scheduled and partially paid invoices appear in the invoice ledger. {operations.cashFlow.excluded > 0 ? `${operations.cashFlow.excluded} other PayPal invoice records are in the ledger. ` : ""}{operations.cashFlow.partial ? "Partial summary: first 1,000 records only." : ""}</span>
           </div>
         </section>
         <section className={`${styles.panel} ${styles.overviewReview}`}>
@@ -144,7 +145,7 @@ export function DashboardHome({
                 </tr>
               </thead>
               <tbody>
-                {operations.review.length ? operations.review.map((item) => <tr key={item.id}><td><Link href={"/dashboard/approvals?workflow=" + encodeURIComponent(item.id)}>Review proposal</Link></td><td>{item.counterparty}</td><td>{item.currency} {item.amount || "Uncertain"}</td><td>{item.status.replaceAll("_", " ")}</td></tr>) : <tr>
+                {operations.review.length ? operations.review.map((item) => <tr key={item.id}><td><Link href={"/dashboard/approvals?workflow=" + encodeURIComponent(item.id)}>Review proposal</Link></td><td>{item.counterparty}</td><td>{item.amount ? item.currency ? `${item.currency} ${item.amount}` : `${item.amount} (currency unconfirmed)` : "Review source amounts"}</td><td>{item.status.replaceAll("_", " ")}</td></tr>) : <tr>
                   <td colSpan={4}>
                     <EmptyState
                       compact

@@ -1,9 +1,10 @@
 "use client";
+import { IntegrationMark } from "@/components/integration-mark";
 import { useToast } from "@/components/feedback/toast-provider";
 import { InlineFeedback } from "@/components/feedback/feedback";
 import { requestErrorMessage } from "@/lib/request-feedback";
 import { Spinner } from "@/components/feedback/feedback";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Bell, ChevronDown, FileText, Handshake, Mail, Pencil, Search, ShieldCheck } from "@/components/icons";
 import { useRouter } from "next/navigation";
@@ -13,6 +14,10 @@ import { ProcessingActivity } from "./processing-activity";
 import { ConversationWorkspace } from "./conversation-workspace";
 import { displayTime, ActivityTimeline, ActivityEmpty } from "./workspace-presenters";
 import { EmptyState } from "./states";
+import { isCurrencyCode } from "@/lib/automation/extraction";
+import { amountRoleLabel } from "@/lib/automation/agreement-amounts";
+import type { PayPalTrace } from "@/lib/automation/paypal-trace";
+import type { ReviewedTerms } from "@/lib/automation/reviewed-terms";
 import type { Resource } from "@/lib/automation/resources";
 type Item = Record<string, unknown> & { id: string };
 export type ResourcePage = { items: Item[]; nextCursor: string | null };
@@ -59,6 +64,11 @@ function statusTone(status: string) {
 function StatusPill({ status }: { status: string }) {
   return <span className={styles.recordStatus} data-tone={statusTone(status)}>{status.replaceAll("_", " ") || "Unknown"}</span>;
 }
+function displayAmount(value: string) {
+  const [whole, fraction] = value.split(".");
+  return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (fraction ? `.${fraction}` : "");
+}
+
 const recordIcons = { contacts: Mail, documents: FileText, notifications: Bell, deliveries: Bell, analyses: ShieldCheck };
 const emptyTitles: Partial<Record<Resource, string>> = {
   workflows: "No financial proposals yet", contacts: "No contacts yet", documents: "No documents yet",
@@ -114,7 +124,7 @@ export function LiveResource({
         }),
         result = await response.json();
       if (!response.ok) throw new Error(result.error || "The request failed.");
-      notify(typeof result.message === "string" ? result.message : result.jobId ? "Queued. Progress will update automatically." : "Saved.");
+      notify(typeof result.message === "string" ? result.message : result.jobId ? "Queued. Use Refresh dashboard to check progress." : "Saved.");
       setLoaded(null);
       router.refresh();
     } catch (e) {
@@ -137,7 +147,7 @@ export function LiveResource({
       if (!response.ok) throw new Error(next.error);
       setLoaded({
         revision,
-        page: { items: [...page.items, ...next.items], nextCursor: next.nextCursor },
+        page: { items: [...new Map([...page.items, ...next.items as Item[]].map(item => [item.id, item])).values()], nextCursor: next.nextCursor },
       });
     } catch {
       setFailed(true);
@@ -219,6 +229,9 @@ export function LiveResource({
             if (workflowList) {
               const proposal = item.proposal as Proposal | undefined;
               const Icon = proposal?.extraction?.category === "agreement" ? Handshake : ShieldCheck;
+              const amount = str(item, "amount");
+              const currency = isCurrencyCode(item.currency) ? item.currency : "";
+              const needsReview = item.status === "needs_review" || item.status === "duplicate_review";
               return (
                 <li key={item.id} className={styles.workflowCard}>
                   <details open={focusedWorkflow === item.id || undefined}>
@@ -226,10 +239,13 @@ export function LiveResource({
                       <span className={styles.recordIcon}><Icon size={20} aria-hidden="true" /></span>
                       <span className={styles.recordMain}>
                         <strong>{str(item, "counterparty") || "Financial proposal"}</strong>
-                        <span>{proposal?.extraction?.reference || proposal?.extraction?.category?.replaceAll("_", " ") || "Financial workflow"}</span>
+                        <span>{proposal?.ownerReviewedTerms?.reference || proposal?.extraction?.reference || proposal?.extraction?.category?.replaceAll("_", " ") || "Financial workflow"}</span>
                       </span>
                       <StatusPill status={str(item, "status")} />
-                      <strong className={styles.recordAmount}>{str(item, "amount") ? [str(item, "currency"), str(item, "amount")].filter(Boolean).join(" ") : "Amount uncertain"}</strong>
+                      <span className={styles.recordAmount}>
+                        <strong>{amount ? [currency, displayAmount(amount)].filter(Boolean).join(" ") : "Review source"}</strong>
+                        {amount && (needsReview || !currency) && <small>{currency ? "Reported amount" : "Currency unconfirmed"}</small>}
+                      </span>
                       <ChevronDown className={styles.recordChevron} size={19} aria-hidden="true" />
                     </summary>
                     <div className={styles.workflowDetails}>
@@ -279,23 +295,69 @@ export function LiveResource({
 
 const workflowNextStep: Record<string, string> = {
   pending_approval: "Next: verify source evidence, amount and customer email before authorizing this exact sandbox draft.",
-  needs_review: "Manual review required. Approval is unavailable until the proposal is safe to authorize.",
+  needs_review: "Check the source for the amount still due. Confirm the terms before preparing a PayPal action.",
   duplicate_review: "Possible duplicate. Review the matching workflow before creating another draft.",
   reconciliation_required: "Recovery required. Verify an existing sandbox invoice below; do not create a replacement.",
   draft_created: "Sandbox draft created. This is not a sent invoice or proof of payment.",
   approved: "Approval recorded. Check Activity for draft creation progress.",
   rejected: "Proposal rejected. No new authorization is granted by this record.",
 };
+function PayPalActivity({ workspaceId, workflowId, revision }: { workspaceId: string; workflowId: string; revision: string }) {
+  const [result, setResult] = useState<{ revision: string; trace?: PayPalTrace; error?: string }>();
+  const [loading, setLoading] = useState(false);
+  const trace = result?.revision === revision ? result.trace : undefined;
+  async function load() {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not load PayPal activity.");
+      setResult({ revision, trace: await response.json() });
+    } catch (error) {
+      setResult({ revision, error: requestErrorMessage(error) });
+    } finally {
+      setLoading(false);
+    }
+  }
+  const steps = trace ? [
+    trace.approval && { label: "Owner decision", status: trace.approval.status, at: trace.approval.at },
+    trace.submission && { label: "PayPal submission", status: trace.submission.status, at: trace.submission.attemptedAt, id: trace.submission.providerId },
+    trace.send && { label: "Invoice delivery", status: trace.send.status, at: trace.send.attemptedAt },
+    trace.paymentLinkVerifiedAt && { label: "Payment link", status: "verified", at: trace.paymentLinkVerifiedAt },
+  ].filter(step => !!step) : [];
+  return <details className={styles.evidenceDetails} onToggle={event => {
+    if (event.currentTarget.open && result?.revision !== revision) void load();
+  }}>
+    <summary>PayPal activity <ChevronDown size={13} /></summary>
+    {loading && <p role="status">Loading PayPal activity…</p>}
+    {result?.revision === revision && result.error && <p role="alert">{result.error}</p>}
+    {trace && (steps.length ? <dl className={styles.paymentTrace}>{steps.map(step => <div key={step.label}>
+      <dt>{step.label}</dt><dd><StatusPill status={step.status} />{step.at && <time dateTime={step.at}>{new Date(step.at).toLocaleString()}</time>}
+      {"id" in step && step.id && <code>{step.id}</code>}</dd>
+    </div>)}</dl> : <p>PayPal activity appears after an owner approves an action.</p>)}
+    {!loading && <button type="button" className={styles.reviewSecondary} onClick={() => void load()}>{trace ? "Refresh activity" : "Check PayPal activity"}</button>}
+  </details>;
+}
 function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: Item; workspaceId: string; canApprove: boolean; busy: boolean; mutate: (path: string, body: Record<string, unknown>) => Promise<void>}) {
   const sendReview = item.sendReview as {snapshotHash:string; expiresAt:string; snapshot:{providerId:string; invoice:{amount?:{currency_code:string;value:string};primary_recipients?:{billing_info?:{email_address?:string}}[]; detail?:{reference?:string;invoice_date?:string}}}} | null;
   const [recipient, setRecipient] = useState(""), [recoveryId, setRecoveryId] = useState("");
   const [revisedAmount, setRevisedAmount] = useState("");
   const payout = item.action === "pay_supplier" || (item.proposal as Proposal | undefined)?.intendedAction === "pay_supplier";
   const providerId = str(item, "providerId");
+  const proposal = (item.proposal || {}) as Proposal;
+  const recipientList = useId();
+  const [contacts, setContacts] = useState<Item[] | null>(null);
+  async function loadContacts() {
+    if (contacts) return;
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/contacts`);
+      if (response.ok) setContacts((await response.json()).items);
+    } catch { /* Manual entry remains available. */ }
+  }
   return <div className={styles.workflowReview}>
     <div className={styles.reviewGuide}>
       <ShieldCheck size={19} />
-      <div><p className={styles.operationLabel}>{str(item,"action").replaceAll("_"," ") || "Financial review"}</p>
+      <div><p className={styles.operationLabel}>{item.status === "needs_review" ? "Review the source" : payout ? "Supplier payout" : item.action === "create_draft_invoice" ? "Customer invoice" : "Financial review"}</p>
       {workflowNextStep[str(item, "status")] && <p className={styles.reviewNextStep}>{payout && item.status === "pending_approval"
       ? "Verify the quoted amount and supplier PayPal email before authorizing this sandbox payout."
       : payout && item.status === "approved" ? "Approval recorded. Check Activity for payout progress."
@@ -305,10 +367,12 @@ function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: It
     <div className={styles.reviewColumns}>
     <section className={styles.evidencePanel} aria-label="Proposal evidence">
       <FinancialEvidence proposal={item.proposal} />
-      <Link className={styles.evidenceSource} href="/dashboard/inbox">Review source communication <ArrowUpRight size={13} /></Link>
+      <Link className={styles.evidenceSource} href={{ pathname: "/dashboard/inbox", query: { message: str(item, "messageId") } }}>Review source communication <ArrowUpRight size={13} /></Link>
     </section>
     <section className={styles.decisionPanel} aria-label="Workflow decision">
-    <h3>{canApprove && ["pending_approval", "needs_review", "duplicate_review"].includes(str(item, "status")) ? "Make a decision" : "Provider status & actions"}</h3>
+    <h3 className={styles.paypalHeading}><IntegrationMark provider="paypal" size={20} />
+      {item.status === "pending_approval" && canApprove ? "Approve PayPal action" : item.status === "needs_review" && canApprove ? "Prepare PayPal approval" : "PayPal status"}
+    </h3>
     {canApprove && payout && str(item, "status").startsWith("payout_") && <form onSubmit={event => {
       event.preventDefault();
       void mutate(`workflows/${item.id}`, {action: "verify_payout", providerId: providerId || recoveryId});
@@ -321,16 +385,17 @@ function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: It
     {canApprove && item.status === "draft_created" && item.action !== "review" && <div><button disabled={busy} onClick={() => void mutate("workflows/"+item.id,{action:"review_send"})}>Verify unsent sandbox invoice for separate send approval</button>{sendReview && <form onSubmit={event=>{event.preventDefault();void mutate("workflows/"+item.id,{action:"approve_send",snapshotHash:sendReview.snapshotHash});}}><p>Send existing sandbox invoice {sendReview.snapshot.providerId} to {sendReview.snapshot.invoice.primary_recipients?.[0]?.billing_info?.email_address} · {sendReview.snapshot.invoice.amount?.currency_code} {sendReview.snapshot.invoice.amount?.value}. Reference: {sendReview.snapshot.invoice.detail?.reference}. Issue date: {sendReview.snapshot.invoice.detail?.invoice_date || "current date"}. Future issue dates schedule delivery.</p><p>Sandbox application credentials are bound; merchant account identity is not independently verified. This separate approval authorizes PayPal to email the customer and merchant. It does not charge the customer. Review expires: {sendReview.expiresAt}.</p><p>Only approval-critical invoice fields are shown. Additional provider account details remain private.</p><button className={styles.workflowPrimary} disabled={busy}>Approve sending this exact sandbox invoice</button>
       <button type="button" disabled={busy} onClick={() => void mutate("slack-identity", {action: "prepare-send", workflowId: item.id, snapshotHash: sendReview.snapshotHash})}>Send approval card to Slack</button></form>}</div>}
     {canApprove && ["send_reconciliation_required","send_approved"].includes(str(item,"status")) && <div><p>Send authorized or uncertain. Never resend. Verify the existing invoice using GET-only recovery.</p><button disabled={busy} onClick={()=>void mutate("workflows/"+item.id,{action:"recover_send"})}>Reconcile existing send (read only)</button></div>}
-    {typeof item.paymentLink === "string" && ["invoice_sent","unpaid","payment_pending","partially_paid"].includes(str(item,"status")) && <a href={item.paymentLink} target="_blank" rel="noopener noreferrer">Open verified PayPal sandbox payment link</a>}
+    {typeof item.paymentLink === "string" && ["invoice_sent","unpaid","payment_pending","partially_paid"].includes(str(item,"status")) && <a href={item.paymentLink} target="_blank" rel="noopener noreferrer">Open invoice in PayPal sandbox <ArrowUpRight size={14} /></a>}
     {item.status === "paid" && <p>PayPal reports PAID. Sandbox only; no live settlement.</p>}
     {item.status === "externally_marked_paid" && <p>Merchant manually marked paid; not verified payer settlement.</p>}
-    {canApprove && ["pending_approval","needs_review","duplicate_review"].includes(str(item,"status")) && <div>
+    {canApprove && ["pending_approval","needs_review","duplicate_review"].includes(str(item,"status")) && <div className={styles.decisionFlow}>
       {item.status === "pending_approval" && <form onSubmit={(event) => { event.preventDefault(); void mutate(`workflows/${item.id}`, {action:"approve", proposalHash:item.proposalHash, recipientEmail:recipient}); }}>
-        <label>{payout ? "Supplier PayPal email" : "Customer email for this draft"}<input type="email" required maxLength={payout ? 127 : 254} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>
+        <label>{payout ? "Supplier PayPal email" : "Customer email for this draft"}<input type="email" required maxLength={payout ? 127 : 254} list={recipientList} onFocus={() => void loadContacts()} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>
+        <datalist id={recipientList}>{contacts?.map(contact => <option key={contact.id} value={str(contact, "email")} label={str(contact, "displayName")} />)}</datalist>
         <p>{payout ? "Approval sends the exact listed amount to this supplier in PayPal sandbox." : "Approval creates the proposed PayPal sandbox draft invoice for this customer. It does not send the invoice or move money."}</p>
-        <button className={styles.workflowPrimary} disabled={busy}>{busy && <Spinner size={15}/>} {payout ? "Approve exact sandbox payout" : "Approve exact draft invoice"}</button>
+        <button className={styles.workflowPrimary} disabled={busy}>{busy && <Spinner size={15}/>} {payout ? "Approve PayPal sandbox payout" : "Approve PayPal invoice draft"}</button>
       </form>}
-      {item.status === "pending_approval" && <details className={styles.reviseAmount}>
+      {item.status === "pending_approval" && !proposal.ownerReviewedTerms && <details className={styles.reviseAmount}>
         <summary><Pencil size={15} /> Change amount <ChevronDown size={13} /></summary>
         <form onSubmit={event => {
           event.preventDefault();
@@ -340,33 +405,85 @@ function WorkflowReview({item, workspaceId, canApprove, busy, mutate}: {item: It
         <p>Use an amount from the quoted evidence. A change requires a fresh approval.</p>
         <button disabled={busy}>Save revised amount</button>
       </form></details>}
+      {(item.status === "needs_review" || item.status === "pending_approval") && !proposal.duplicateOf &&
+        <details className={styles.reviseAmount} open={item.status === "needs_review" || undefined}>
+          <summary><Pencil size={15} /> {proposal.ownerReviewedTerms ? "Edit PayPal terms" : "Prepare PayPal terms"} <ChevronDown size={13} /></summary>
+          <form className={styles.termsForm} onSubmit={event => {
+            event.preventDefault();
+            const fields = new FormData(event.currentTarget);
+            void mutate(`workflows/${item.id}`, {
+              ...Object.fromEntries(fields), action: "prepare_terms", proposalHash: item.proposalHash,
+              confirmedOutstanding: fields.has("confirmedOutstanding"),
+            });
+          }}>
+            <p className={styles.formHelp}>Confirm the amount and currency due. You’ll select the recipient and approve the action next.</p>
+            <label className={styles.formWide}>PayPal action
+              <select name="financialAction" defaultValue={proposal.ownerReviewedTerms?.action || ""} required>
+                <option value="" disabled>Choose an action</option>
+                <option value="create_draft_invoice">Invoice a customer</option>
+                <option value="pay_supplier" disabled={item.payoutsEnabled !== true}>Pay a supplier{item.payoutsEnabled !== true ? " (payouts disabled)" : ""}</option>
+              </select>
+            </label>
+            <label>Amount still due
+              <input name="amount" required inputMode="decimal" placeholder="0.00" defaultValue={proposal.ownerReviewedTerms?.amount} />
+            </label>
+            <label>Agreed currency
+              <input name="currency" required minLength={3} maxLength={3} pattern="[A-Za-z]{3}" placeholder="USD" autoCapitalize="characters" defaultValue={proposal.ownerReviewedTerms?.currency} />
+            </label>
+            <label className={styles.formWide}>Obligation reference
+              <input name="reference" required maxLength={120} placeholder="Invoice or agreement reference" defaultValue={proposal.ownerReviewedTerms?.reference || proposal.extraction?.reference} />
+            </label>
+            <label className={styles.formWide}>Description
+              <textarea name="purpose" required maxLength={200} rows={2} placeholder="What this amount covers" defaultValue={proposal.ownerReviewedTerms?.purpose} />
+            </label>
+            <label className={styles.confirmTerms}>
+              <input name="confirmedOutstanding" type="checkbox" required />
+              <span>I verified the amount and currency due and checked that this obligation has no existing PayPal invoice or payout.</span>
+            </label>
+            <button className={`${styles.workflowPrimary} ${styles.formWide}`} disabled={busy}>Save terms for approval</button>
+          </form>
+        </details>}
       <div className={styles.decisionActions}>
-        <Link href={`/workspaces/${encodeURIComponent(workspaceId)}/slack-identity?workflowId=${encodeURIComponent(item.id)}`}>Prepare decision in Slack <ArrowUpRight size={13} /></Link>
-        <button className={styles.rejectDecision} disabled={busy} onClick={() => void mutate(`workflows/${item.id}`, {action:"reject", proposalHash:item.proposalHash})}>{busy && <Spinner size={15}/>} Reject proposal</button>
+        <div>
+          {item.status === "needs_review" && <button type="button" className={styles.reviewSecondary} disabled={busy} onClick={() => void mutate(`workflows/${item.id}`, { action: "reanalyze", proposalHash: item.proposalHash })}>Reanalyze source</button>}
+          <Link href={`/workspaces/${encodeURIComponent(workspaceId)}/slack-identity?workflowId=${encodeURIComponent(item.id)}`}>{item.status === "pending_approval" ? "Prepare in Slack" : "Slack actions"} <ArrowUpRight size={13} /></Link>
+        </div>
+        <button type="button" className={styles.rejectDecision} disabled={busy} onClick={() => void mutate(`workflows/${item.id}`, {action:"reject", proposalHash:item.proposalHash})}>{busy && <Spinner size={15}/>} Reject proposal</button>
       </div>
     </div>}
+    {canApprove && providerId.startsWith("INV2-") && !["reconciliation_required", "send_reconciliation_required", "send_approved"].includes(str(item, "status")) &&
+      <button type="button" className={styles.reviewSecondary} disabled={busy} onClick={() => void mutate(`workflows/${item.id}`, { action: "verify_invoice" })}>Check PayPal status</button>}
+    {canApprove && <PayPalActivity workspaceId={workspaceId} workflowId={item.id} revision={str(item, "updatedAt")} />}
     {!canApprove && <small>Only the workspace owner can approve financial actions.</small>}
     </section>
     </div>
   </div>;
 }
-type Proposal = { intendedAction?: string; triage?: { reasons?: string[]; senderHistory?: { senderEmail?: string; coverageLimited?: boolean; matches?: { messageId: string; category: string; reference?: string }[] } }; consequence?: string; duplicateOf?: string; agreementWorkflowId?: string; warnings?: string[]; extraction?: { category?: string; purpose?: string; reference?: string; dueDate?: string; direction?: string; confidence?: number; evidence?: {sourceId: string; quote: string}[]; uncertainties?: string[] } };
+type Proposal = { ownerReviewedTerms?: ReviewedTerms; amounts?: { role: keyof typeof amountRoleLabel; amount: string; currency: string | null; label: string; sourceId: string; quote: string }[]; intendedAction?: string; triage?: { reasons?: string[]; senderHistory?: { senderEmail?: string; coverageLimited?: boolean; matches?: { messageId: string; category: string; reference?: string }[] } }; consequence?: string; duplicateOf?: string; agreementWorkflowId?: string; warnings?: string[]; extraction?: { category?: string; purpose?: string; reference?: string; dueDate?: string; paymentTerms?: string; direction?: string; confidence?: number; evidence?: {sourceId: string; quote: string}[]; uncertainties?: string[] } };
 function FinancialEvidence({proposal}: {proposal: unknown}) {
   const data = (proposal || {}) as Proposal, extracted = data.extraction;
   return <div className={styles.evidenceContent}>
     <h3>Proposal &amp; evidence</h3>
     <p className={styles.evidencePurpose}>{extracted?.purpose || "Purpose requires review."}</p>
     {data.consequence && <p>{data.consequence}</p>}
+    {data.ownerReviewedTerms && <p><strong>Owner-reviewed terms</strong> · {data.ownerReviewedTerms.currency} {data.ownerReviewedTerms.amount} · {data.ownerReviewedTerms.reference} · {data.ownerReviewedTerms.purpose}</p>}
     <dl className={styles.evidenceFacts}>
       <div><dt>Category</dt><dd>{extracted?.category?.replaceAll("_", " ") || "Unconfirmed"}</dd></div>
       <div><dt>Direction</dt><dd>{extracted?.direction || "Uncertain"}</dd></div>
       {extracted?.reference && <div><dt>Reference</dt><dd>{extracted.reference}</dd></div>}
-      {extracted?.dueDate && <div><dt>Due date</dt><dd>{extracted.dueDate}</dd></div>}
+      {extracted?.dueDate && <div><dt>Reported due date</dt><dd><time dateTime={extracted.dueDate}>{extracted.dueDate}</time></dd></div>}
+      {extracted?.paymentTerms && <div className={styles.formWide}><dt>Payment terms</dt><dd>{extracted.paymentTerms}</dd></div>}
     </dl>
+    {!!data.amounts?.length && <dl className={styles.evidenceFacts}>
+      {data.amounts.map((entry, index) => <div key={index}>
+        <dt>{amountRoleLabel[entry.role]}</dt><dd>{entry.currency ? `${entry.currency} ` : ""}{displayAmount(entry.amount)}{entry.label ? ` · ${entry.label}` : ""}</dd>
+      </div>)}
+    </dl>}
     <details className={styles.evidenceDetails}><summary>Extraction notes &amp; source excerpts <ChevronDown size={13} /></summary>
     {data.triage?.reasons?.length ? <p>Flagged for review: {data.triage.reasons.map(reason => ({ financial_content: "financial content", uncertain_content: "content needing clarification", sender_financial_history: "prior financial history from this sender", financial_attachment: "a financial attachment", unreadable_attachment: "an attachment requiring manual review" })[reason] || "manual review").join(", ")}.</p> : null}
     {data.triage?.senderHistory?.matches?.length ? <p>Sender history: {data.triage.senderHistory.matches.length} prior financial messages matched the reported email address. This context requires confirmation.{data.triage.senderHistory.coverageLimited ? " The history search reached its limit." : ""}</p> : null}
     <p>Extraction confidence: {typeof extracted?.confidence === "number" ? Math.round(extracted.confidence * 100) + "%" : "Not available"}. Model confidence does not verify an obligation.</p>
+    {data.amounts?.map((entry, index) => <blockquote key={`amount-${index}`} className={styles.evidenceQuote}>{entry.quote}<footer><small>{amountRoleLabel[entry.role]} · {entry.sourceId}</small></footer></blockquote>)}
     {extracted?.evidence?.map((e, index) => <blockquote key={index} className={styles.evidenceQuote}>{e.quote}<footer><small>Source: {e.sourceId}</small></footer></blockquote>)}
     {[...(data.warnings || []), ...(extracted?.uncertainties || [])].map((warning, index) => <p key={index}>Needs review: {warning}</p>)}
     </details>

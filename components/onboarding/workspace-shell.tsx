@@ -2,6 +2,7 @@ import Link from "next/link";
 import { UserRound } from "@/components/icons";
 import { Brand } from "@/components/brand";
 import { AccountMenu } from "./account-menu";
+import { RefreshDashboard } from "@/components/dashboard/refresh-dashboard";
 import { NotificationOverlay } from "@/components/dashboard/notification-overlay";
 import styles from "./onboarding.module.css";
 import { WorkspaceSwitcher } from "./workspace-switcher";
@@ -69,7 +70,10 @@ export function WorkspaceShell({
             </strong>
           </div>
           <div className={styles.headerRight}>
-            {active === "overview" && workspaceId && <NotificationOverlay key={workspaceId} workspaceId={workspaceId} />}
+            {active === "overview" && workspaceId && <>
+              <RefreshDashboard className={styles.refreshDashboard} />
+              <NotificationOverlay key={workspaceId} workspaceId={workspaceId} />
+            </>}
             <AccountMenu name={name} email={email} role={workspace?.role} />
           </div>
         </header>

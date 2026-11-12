@@ -2549,3 +2549,18 @@
 .accountContext > div { min-width:0; }
 .accountContext strong { display:block; color:#253b5c; font-size:12px; font-weight:600; }
 .accountContext small { display:block; margin-top:5px; color:#8492a8; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.headerRight .refreshDashboard {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border: 1px solid #dce5f3;
+  background: #fff;
+  color: #345481;
+  cursor: pointer;
+}
+.refreshDashboard:hover:not(:disabled) { background: #eff4ff; }
+.refreshDashboard:focus-visible { outline: 2px solid #3453ce; outline-offset: 2px; }
+.refreshDashboard:disabled { cursor: wait; }

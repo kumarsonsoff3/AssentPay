@@ -49,8 +49,7 @@ export function ConversationWorkspace({
       ["sender", "subject", "text", "snippet"].some(key =>
         value(item, key).toLowerCase().includes(query.toLowerCase()),
       ) &&
-      (filter !== "unread" || item.unread === true) &&
-      (filter !== "financial" || item.financial === true),
+      (filter !== "unread" || item.unread === true),
   );
   const selected = filtered.find(item => item.id === selectedId) || filtered[0];
   return (
@@ -68,7 +67,7 @@ export function ConversationWorkspace({
                 {nextCursor ? "+" : ""}
               </span>
             </h2>
-            <p>Your conversations. The full picture.</p>
+            <p>Messages flagged as financial. <Link href="/dashboard/activity" prefetch={false}>Check email processing</Link></p>
           </div>
         </div>
         <div className={ui.headingActions}>
@@ -95,17 +94,13 @@ export function ConversationWorkspace({
         </label>
         <div className={ui.filters} aria-label="Filter conversations">
           {[
-            { id: "all", label: "All messages", count: items.length },
+            { id: "all", label: "All financial messages", count: items.length },
             {
               id: "unread",
               label: "Unread",
               count: items.filter(item => item.unread).length,
             },
-            {
-              id: "financial",
-              label: "Financial",
-              count: items.filter(item => item.financial).length,
-            },
+
           ].map(tab => (
             <button
               key={tab.id}
@@ -268,20 +263,19 @@ export function ConversationWorkspace({
           <span className={`${ui.eventIcon} ${ui.blue}`}>
             <Inbox size={26} />
           </span>
-          <h3>Your useful financial conversations appear here.</h3>
+          <h3>No financial conversations yet</h3>
           <p>
-            Forward business email for analysis. Conversations appear here once
-            financial intent is identified; unrelated and pending messages stay
-            out of this view.
+            Messages appear here after the agent flags them as financial.
+            Activity shows forwarded emails that are still processing or were skipped.
           </p>
-          <Link href="/dashboard/integrations">
-            Set up workspace email <ArrowUpRight size={15} />
+          <Link href="/dashboard/activity" prefetch={false}>
+            Check email processing <ArrowUpRight size={15} />
           </Link>
         </div>
       )}
       <div className={ui.inboxFoot}>
         <ShieldCheck size={14} />
-        Only the emails you choose to forward appear here.
+        This inbox shows financial messages from your connected email sources.
       </div>
     </section>
   );

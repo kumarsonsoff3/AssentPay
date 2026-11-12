@@ -51,18 +51,6 @@ export async function optionalRow(
     throw e;
   }
 }
-export async function signal(
-  db: TablesDB,
-  tx: string,
-  workspaceId: string,
-  kind: string,
-) {
-  await db.upsertRow({
-    ...params("workspace_events", workspaceId, tx),
-    permissions: [],
-    data: { workspaceId, kind, revision: randomBytes(16).toString("hex") },
-  });
-}
 export async function audit(
   db: TablesDB,
   tx: string,
@@ -86,7 +74,6 @@ export async function audit(
       detailsJson: JSON.stringify(details),
     },
   });
-  await signal(db, tx, workspaceId, action);
 }
 export async function notify(
   db: TablesDB,
@@ -177,7 +164,6 @@ export async function enqueue(
         payloadJson: JSON.stringify(input.payload || {}),
       },
     });
-  await signal(db, tx, input.workspaceId, "job.queued");
   return id;
 }
 export const isPayoutEvent = (eventType: string) => /^PAYMENT\.(PAYOUTSBATCH|PAYOUTS-ITEM)\./.test(eventType);

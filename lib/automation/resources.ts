@@ -1,12 +1,15 @@
 import { sendReviewView } from './paypal-send-view';
-import { sendId } from './paypal-send';
+import { sendId, storedInvoicePaymentLink } from './paypal-invoice-link';
 import { memoryView } from "./memory";
 import "server-only";
 import { Query } from "node-appwrite";
 import { dataDatabase } from "../data/client";
 import { InputError, validId } from "../workspaces/validation";
 import { currentMailVersion } from "./gmail-sync";
-import { params } from "./store";
+import { params, stableId } from "./store";
+import { emailAddress } from "./gmail-client";
+import { payoutsEnabled } from "./paypal-payout";
+import { inboxId } from "./inbox";
 import { optionalRow } from "./store";
 import { processingState } from "./processing-state";
 const tables = {
@@ -25,14 +28,38 @@ export type Resource = keyof typeof tables;
 export function isResource(value: string): value is Resource {
   return Object.hasOwn(tables, value);
 }
+async function forwardedContacts(workspaceId: string) {
+  const endpoint = await optionalRow("inbound_endpoints", inboxId(workspaceId));
+  if (!endpoint || endpoint.workspaceId !== workspaceId || endpoint.status === "disabled") return [];
+  const page = await dataDatabase().listRows({
+    ...params("mail_messages"),
+    queries: [Query.equal("workspaceId", workspaceId), Query.equal("connectionVersion", endpoint.version),
+      Query.equal("financial", true), Query.orderDesc("receivedAt"), Query.limit(500),
+      Query.select(["$id", "$updatedAt", "sender", "receivedAt"])],
+  });
+  const contacts = new Map<string, { id: string; email: string; displayName: string; lastSeenAt: string; updatedAt: string }>();
+  for (const message of page.rows) {
+    const email = emailAddress(message.sender);
+    if (!email || contacts.has(email)) continue;
+    contacts.set(email, {
+      id: stableId(workspaceId, email, "directory-contact"),
+      email, displayName: message.sender.replace(/<[^>]*>/g, "").replace(/"/g, "").trim().slice(0, 320) || email,
+      lastSeenAt: message.receivedAt, updatedAt: message.$updatedAt,
+    });
+  }
+  return [...contacts.values()];
+}
+
 export async function readResources(
   workspaceId: string,
   resource: Resource,
   userId: string,
   cursor?: string,
   workflowId?: string,
+  messageId?: string,
 ) {
   if (cursor) validId(cursor);
+  if (messageId) validId(messageId);
   if (workflowId) {
     validId(workflowId);
     if (resource !== "workflows")
@@ -50,9 +77,10 @@ export async function readResources(
     ...(cursor ? [Query.cursorAfter(cursor)] : []),
     ...(workflowId ? [Query.equal("$id", workflowId)] : []),
   ];
+  const forwarded = resource === "contacts" && !cursor ? await forwardedContacts(workspaceId) : [];
   if (resource === "contacts") {
     const version = await currentMailVersion(workspaceId);
-    if (!version) return { items: [], nextCursor: null };
+    if (!version) return { items: forwarded, nextCursor: null };
     queries.push(Query.equal("connectionVersion", version));
   }
   if (resource === "messages") queries.push(Query.equal("financial", true));
@@ -60,10 +88,16 @@ export async function readResources(
     ...params(tables[resource]),
     queries: [Query.equal("workspaceId", workspaceId), ...queries],
   });
+  const focusedMessage = resource === "messages" && messageId && !page.rows.some(row => row.$id === messageId)
+    ? await optionalRow("mail_messages", messageId)
+    : null;
+  const rows = focusedMessage?.workspaceId === workspaceId && focusedMessage.financial
+    ? [focusedMessage, ...page.rows]
+    : page.rows;
   const isOwner = resource === "workflows" && page.rows.length > 0
     && (await (await import("../workspaces/server")).workspaceAccess(workspaceId, userId)).role === "owner";
   const items = await Promise.all(
-    page.rows.map(async row => {
+    rows.map(async row => {
       const base = { id: row.$id, updatedAt: row.$updatedAt };
       switch (resource) {
         case "deliveries":
@@ -76,7 +110,7 @@ export async function readResources(
         case "workflows": {
           const id = sendId(workspaceId, row.$id);
           const [sendReview, view] = isOwner
-            ? await Promise.all([optionalRow("paypal_send_reviews", id), optionalRow("paypal_invoice_views", id)])
+            ? await Promise.all([optionalRow("paypal_send_reviews", id), storedInvoicePaymentLink(workspaceId, row.$id, row.providerId, row.status)])
             : [null, null];
           return {
             ...base,
@@ -87,8 +121,9 @@ export async function readResources(
             amount: row.amount,
             currency: row.currency,
             providerId: row.providerId,
+            payoutsEnabled: payoutsEnabled(),
             sendReview: sendReviewView(sendReview, workspaceId, isOwner),
-            paymentLink: view?.workspaceId === workspaceId && view.providerId === row.providerId ? view.paymentLink : null,
+            paymentLink: view,
             proposal: JSON.parse(row.proposalJson),
             proposalHash: (await import("./intelligence")).proposalHash(
               row.proposalJson,
@@ -123,6 +158,7 @@ export async function readResources(
         case "contacts":
           return {
             ...base,
+            id: stableId(workspaceId, row.email, "directory-contact"),
             email: row.email,
             displayName: row.displayName,
             lastSeenAt: row.lastSeenAt,
@@ -200,6 +236,10 @@ export async function readResources(
       }
     }),
   );
+  if (resource === "contacts") {
+    const merged = new Map([...forwarded, ...items].map(item => [item!.id, item]));
+    return { items: [...merged.values()], nextCursor: page.rows.length === 50 ? page.rows.at(-1)!.$id : null };
+  }
   return {
     items,
     nextCursor: page.rows.length === 50 ? page.rows.at(-1)!.$id : null,

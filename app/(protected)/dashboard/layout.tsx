@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import { dashboardContext } from "@/lib/dashboard/context";
 import { WorkspaceShell } from "@/components/onboarding/workspace-shell";
 import { DashboardLoading } from "@/components/dashboard/states";
-import { LiveUpdates } from "@/components/dashboard/live-updates";
 // Session/membership checks must remain fresh and can redirect. This is the
 // documented per-segment opt-out for auth with Cache Components; keep Suspense
 // for the loading UI without caching credentials or workspace authorization.
@@ -18,7 +17,6 @@ async function Shell({ children }: { children: React.ReactNode }) {
       workspaces={workspaces}
       active="overview"
     >
-      <LiveUpdates workspaceId={workspace.id} />
       {children}
     </WorkspaceShell>
   );

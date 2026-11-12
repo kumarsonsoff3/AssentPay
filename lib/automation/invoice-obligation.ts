@@ -6,9 +6,13 @@ import { optionalRow, params } from "./store";
 type Proposal = {
   extraction?: { reference?: string; evidence?: { quote: string }[] };
   obligationEvidence?: boolean;
+  ownerReviewedTerms?: { reference?: string; confirmedOutstanding?: boolean };
 };
 
 function quotedReference(proposal: Proposal | null) {
+  const reviewed = proposal?.ownerReviewedTerms;
+  if (reviewed?.confirmedOutstanding === true && typeof reviewed.reference === "string" && reviewed.reference.trim())
+    return reviewed.reference.trim().toLowerCase();
   const extraction = proposal?.extraction;
   const reference = typeof extraction?.reference === "string" ? extraction.reference.trim() : "";
   if (!reference || proposal?.obligationEvidence === false ||

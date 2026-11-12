@@ -78,11 +78,11 @@ export function DashboardNavigation({ workspaceId, ready = true, selectBeforeNav
     const Icon = icons[item.id];
     const href = item.id === "settings" && workspaceId ? `/workspaces/${workspaceId}/settings` : sectionHref(item.id);
     const content = <><Icon size={17} /><span>{item.id === "settings" ? "General" : item.label}</span></>;
-    if (item.id === "settings" && workspaceId) return <Link key={item.id} href={href} aria-current={path === href ? "page" : undefined}>{content}</Link>;
+    if (item.id === "settings" && workspaceId) return <Link key={item.id} href={href} prefetch={false} aria-current={path === href ? "page" : undefined}>{content}</Link>;
     if (!ready || selectBeforeNavigation) {
       return <button key={item.id} type="button" disabled={!ready || busy} onClick={() => void navigate(href)}>{content}</button>;
     }
-    return <Link key={item.id} href={href} aria-current={path === href ? "page" : undefined}>{content}</Link>;
+    return <Link key={item.id} href={href} prefetch={false} aria-current={path === href ? "page" : undefined}>{content}</Link>;
   }
   const settingsPage = path.startsWith(`/workspaces/${workspaceId}/settings`) || sections.some((item) => item.group === "manage" && sectionHref(item.id) === path);
   return (

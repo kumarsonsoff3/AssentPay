@@ -129,6 +129,7 @@ export async function retainTransientFinancialData(
       page = await deps.db.listRows({
         databaseId: deps.databaseId,
         tableId: table,
+        total: false,
         queries: [
           Query.orderAsc("$id"),
           Query.limit(25),
@@ -142,6 +143,7 @@ export async function retainTransientFinancialData(
     scanned[table] = page.rows.length;
     if (page.rows.length === 25) next[table] = page.rows.at(-1)!.$id;
     for (const candidate of page.rows) {
+      if (table === "slack_action_tokens" && !eligible(candidate)) continue;
       await deps.commit(async (db, tx) => {
         let row;
         try {
@@ -211,6 +213,7 @@ export async function retainTransientFinancialData(
   const jobs = await deps.db.listRows({
     databaseId: deps.databaseId,
     tableId: "automation_jobs",
+    total: false,
     queries: [
       Query.orderAsc("$id"),
       Query.limit(25),
@@ -221,7 +224,8 @@ export async function retainTransientFinancialData(
   });
   scanned.automation_jobs = jobs.rows.length;
   if (jobs.rows.length === 25) next.automation_jobs = jobs.rows.at(-1)!.$id;
-  for (const candidate of jobs.rows)
+  for (const candidate of jobs.rows) {
+    if (jobReference(candidate)?.token === undefined) continue;
     await deps.commit(async (db, tx) => {
       let job;
       try {
@@ -249,5 +253,6 @@ export async function retainTransientFinancialData(
       if (token && (!matches(job, token) || !eligible(token))) return;
       await scrub(db, tx, job, token);
     });
+  }
   return { cursor: next, deleted, scanned, scrubbed };
 }

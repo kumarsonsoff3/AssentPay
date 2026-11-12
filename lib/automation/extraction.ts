@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agreementAmountSchema } from "./agreement-amounts";
 
 const currencyCodes = new Set(Intl.supportedValuesOf("currency"));
 export function isCurrencyCode(value: unknown): value is string {
@@ -55,4 +56,8 @@ export const extractionSchema = z
     confidence: z.number().min(0).max(1),
   })
   .strict();
+export const analysisExtractionSchema = extractionSchema.extend({
+  amounts: z.array(agreementAmountSchema).max(16),
+});
+
 export type Extraction = z.infer<typeof extractionSchema>;
