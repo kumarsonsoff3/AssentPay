@@ -15,7 +15,7 @@ import {
   Paperclip,
   ReceiptText,
   Sparkles,
-} from "lucide-react";
+} from "@/components/icons";
 import { GmailMark, PayPalMark } from "@/components/brand";
 import { InvoiceDocument } from "@/components/invoice-document";
 import { InvoiceSummary } from "@/components/invoice-summary";

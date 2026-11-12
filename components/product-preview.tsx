@@ -26,7 +26,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Users,
-} from "lucide-react";
+} from "@/components/icons";
 import { Brand } from "@/components/brand";
 import { CashFlowPreview } from "@/components/cash-flow-preview";
 
@@ -177,7 +177,7 @@ function DashboardSidebar() {
   return (
     <aside className="dash-sidebar" aria-label="Dashboard sidebar preview">
       <div className="dash-sidebar-brand">
-        <Brand small />
+        <Brand />
       </div>
       <div className="dash-workspace">
         <span className="dash-avatar">SD</span>

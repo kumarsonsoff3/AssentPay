@@ -11,7 +11,7 @@ import {
   Maximize2,
   MoreHorizontal,
   UserRound,
-} from "lucide-react";
+} from "@/components/icons";
 import { Brand, SlackMark } from "@/components/brand";
 
 import { InvoiceDocument } from "@/components/invoice-document";
@@ -263,7 +263,7 @@ export function PaymentLifecycle() {
           </header>
           <div className={styles.slackBody}>
             <div className={styles.agent}>
-              <Brand compact small />
+              <Brand compact />
               <div>
                 <strong>
                   AssentPay <span>APP</span>

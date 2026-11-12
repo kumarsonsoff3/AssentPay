@@ -1,0 +1,48 @@
+.wrapper {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.wrapper > .control {
+  display: block;
+  appearance: none;
+  min-height: 44px;
+  padding-inline-end: 36px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.chevron {
+  position: absolute;
+  inset-inline-end: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #496080;
+  pointer-events: none;
+}
+
+.wrapper > .control:disabled {
+  cursor: default;
+  background-color: #f6f8fb;
+}
+
+.wrapper > .control:not(:disabled):hover {
+  border-color: #8ba3c5;
+}
+
+@media (forced-colors: active) {
+  .wrapper > .control {
+    appearance: auto;
+    padding-inline-end: 13px;
+  }
+
+  .wrapper > .control:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  .chevron {
+    display: none;
+  }
+}

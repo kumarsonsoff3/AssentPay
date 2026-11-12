@@ -32,12 +32,37 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
-.agent
-AGENTS.md
+Agents.md
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local-only tooling
+.agents/
+.agent/
+playwright.config.ts
+postman/
+
+# Local provider verification records
+/docs/
+scripts
+tests
+
+# Local-only container setup
+/.dockerignore
+/Dockerfile.worker
+/compose.worker.yml
+
+# Trigger.dev local worker and artifacts
+.trigger
+
+# Encrypted local migration recovery snapshots (not application assets)
+.local-backups/
+
+# Generated private Function bundles
+/.function-build/

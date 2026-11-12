@@ -1,4 +1,4 @@
-import { Fingerprint, History, SlidersHorizontal } from "lucide-react";
+import { Fingerprint, History, SlidersHorizontal } from "@/components/icons";
 import { ApprovalBriefing } from "@/components/approval-briefing";
 
 const controls = [

@@ -6,15 +6,16 @@ import {
   Link2,
   ListChecks,
   SlidersHorizontal,
-} from "lucide-react";
+} from "@/components/icons";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
+import { LandingAction } from "./landing-entry";
 
 const setupSteps = [
   {
     icon: Link2,
-    title: "Connect your tools.",
-    copy: "Link your business inbox, approval channel, and PayPal account in one workspace.",
+    title: "Bring your business email.",
+    copy: "Forward selected messages from Gmail, Outlook, or your business mailbox to your private workspace address.",
   },
   {
     icon: SlidersHorizontal,
@@ -30,6 +31,10 @@ const setupSteps = [
 
 const questions = [
   {
+    question: "Can I forward email from providers other than Gmail?",
+    answer: "Yes. Use Gmail, Google Workspace, Outlook, Microsoft 365, or another mailbox that supports external forwarding. You choose which business messages to share. Your workspace includes a setup guide for your provider; work accounts may need administrator approval.",
+  },
+  {
     question: "Can AssentPay handle both client payments and bills I owe?",
     answer:
       "Yes—that is the planned product scope. For money coming in, it prepares client invoices and follow-ups. For money going out, it surfaces supplier invoices, due dates, and payment reminders, then brings the source details and relevant actions to an assigned person in Slack.",
@@ -37,7 +42,7 @@ const questions = [
   {
     question: "Can I use AssentPay for real payments today?",
     answer:
-      "This site is a product preview. The workflow and dashboard use fictional data, and no live invoices, messages, or payments are sent. Account creation and real integrations are part of the upcoming product.",
+      "Accounts, workspaces, email forwarding setup, Slack, and PayPal sandbox connections are available. The landing-page demo uses fictional data. Live payments are not enabled; available financial actions are limited to the configured sandbox workflow.",
   },
   {
     question: "Does reviewing a Slack task send an invoice or pay a bill?",
@@ -52,7 +57,7 @@ const questions = [
   {
     question: "Which communication channels are planned?",
     answer:
-      "Email and Slack are the initial focus, with WhatsApp, Discord, and Telegram planned for later. PayPal is the planned financial integration. The logos on this page show the intended integrations, rather than connections that are live today.",
+      "Email forwarding and Slack are the initial communication options. WhatsApp, Discord, and Telegram are planned for later and marked Soon. Gmail, Outlook and other email providers deliver through forwarding; this does not create a direct mailbox connection. PayPal connections use the sandbox environment.",
   },
   {
     question: "What happens when the details are missing or conflicting?",
@@ -87,7 +92,7 @@ export function GettingStarted() {
             <span className="brand-gradient">A clearer way to work.</span>
           </h2>
           <p className="landing-description mt-5">
-            A look at the setup experience we’re building.
+            Choose what reaches your workspace, then review the next step.
           </p>
         </div>
         <ol className="setup-steps">
@@ -165,6 +170,7 @@ export function FinalCta() {
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-start gap-3">
+          <LandingAction className="inline-flex h-12 items-center gap-4 rounded-lg bg-primary px-6 text-xs font-medium text-white hover:bg-primary/90" />
           <Button
             asChild
             size="lg"
